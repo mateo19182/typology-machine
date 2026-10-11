@@ -27,6 +27,14 @@ class TimeoutSession(requests.Session):
         return super().get(*a, **kw)
 
 
+# streetlevel's tile downloads use requests without a timeout; give every request one so a stalled
+# connection cannot hang a worker for good
+_get = requests.get
+requests.get = lambda *a, **kw: _get(*a, **{"timeout": 30, **kw})
+_sget = requests.Session.get
+requests.Session.get = lambda self, *a, **kw: _sget(self, *a, **{"timeout": 30, **kw})
+
+
 def thin(rows, d):
     seen, out = set(), []
     for r in rows:
@@ -79,7 +87,7 @@ def main():
         for _ in range(3):
             try:
                 if not dst.exists():
-                    im = sv.get_panorama(pano, zoom=a.zoom, session=session())
+                    im = sv.get_panorama(pano, zoom=a.zoom)
                     im.save(dst, quality=88)
                 rec = {"id": pano.id, "lat": pano.lat, "lon": pano.lon, "heading": round(math.degrees(pano.heading), 3) if pano.heading is not None else None,
                        "date": str(pano.date)[:7] if pano.date else None, "spot": spot, "is_current": is_current,
