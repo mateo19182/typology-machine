@@ -32,7 +32,14 @@ signs 307, traffic lights 260, benches 192, manholes 167. Viewer: `data/coruna/t
 
 ### Models
 - SAM 3 loads from an ungated mirror (`JobHarvest/sam3`, transformers format) since Meta's repo gates
-  access. Comparison with Mapillary's detections: `data/coruna/sam3_vs_mapillary.html`.
+  access. Runs fine in 8 GB, a few seconds per image for ten prompts.
+- SAM 3 vs Mapillary on 24 images (`data/coruna/sam3_vs_mapillary.html`): SAM 3 wins clearly.
+  Mapillary's polygons are fragments (a lamp head, not the lamp post) and it misses most instances
+  (1 traffic sign vs 51, 2 manholes vs 31, 32 store signs vs 135 at threshold 0.5). SAM 3 gives whole
+  objects as single instances, and works on the Apple face too. Caveats: prompts overlap ("pole" grabs
+  lamp posts and sign posts), and the lower-score boxes need a look. Mapillary still has one thing SAM
+  doesn't: a 3D position per object, which is what makes cross-image dedupe easy. With SAM we need our
+  own (camera pose plus bearing, or embedding dedupe).
 - Moondream 3 (`moondream/moondream3-preview`, ungated) still to try, for checking crops and naming clusters.
 - The GPU has another process using 16 GB (`uvicorn app:app` on port 8000). 8 GB is enough for SAM 3.
 
