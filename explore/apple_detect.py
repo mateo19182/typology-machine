@@ -3,8 +3,8 @@
 Pipeline: pick panos from data/<city>/lookaround.csv (year filter, bbox, spatial thinning) -> threads fetch
 and decode the requested faces (HEIC, zoom 0) -> the GPU runs SAM 3 in small batches -> crops (full-res,
 padded) and quarter-res masks are written under data/<city>/apple/<slug>/, one jsonl row per instance.
-Faces are not kept (re-downloading is cheaper than storing them). Resumable: finished (pano, face) pairs
-are skipped.
+The original HEIC faces are kept under data/<city>/apple/faces/<pano>_<face>.heic (shared by all prompts) unless
+--no-keep-faces. Resumable: finished (pano, face) pairs are skipped.
 
 Usage: uv run explore/apple_detect.py coruna --prompt "store sign" [--faces 1,3] [--year 2026]
        [--bbox W,S,E,N] [--thin 6] [--limit 500] [--threshold 0.5] [--batch 4]
@@ -86,7 +86,7 @@ class Faces:
                 data = lookaround.get_panorama_face((int(row["id"]), int(row["build_id"])), face, 0, self.auth, session=self.session())
                 im = Image.open(BytesIO(data))
                 im.load()
-                return im.convert("RGB")
+                return im.convert("RGB"), data
             except Exception:
                 time.sleep(1)
         return None
@@ -105,6 +105,7 @@ def main():
     ap.add_argument("--batch", type=int, default=4)
     ap.add_argument("--workers", type=int, default=12)
     ap.add_argument("--min-side", type=int, default=32)
+    ap.add_argument("--no-keep-faces", action="store_true", help="discard the original HEIC faces (default keeps them under apple/faces/)")
     a = ap.parse_args()
 
     base = Path("data") / a.city
@@ -112,6 +113,8 @@ def main():
     out = base / "apple" / slug
     (out / "crops").mkdir(parents=True, exist_ok=True)
     (out / "masks").mkdir(exist_ok=True)
+    faces_dir = base / "apple" / "faces"
+    faces_dir.mkdir(parents=True, exist_ok=True)
     log_path = out / "instances.jsonl"
     done_path = out / "done.txt"
     done = set(done_path.read_text().split()) if done_path.exists() else set()
@@ -151,14 +154,16 @@ def main():
 
     def flush():
         nonlocal n_faces, n_inst
-        ims = [b[2] for b in batch]
+        ims = [b[2][0] for b in batch]
         inp = proc(images=ims, text=[a.prompt] * len(ims), return_tensors="pt").to("cuda")
         with torch.no_grad(), torch.autocast("cuda", dtype=torch.bfloat16):
             o = model(**inp)
         sizes = [(im.height // DOWN, im.width // DOWN) for im in ims]
         res = proc.post_process_instance_segmentation(o, threshold=a.threshold, mask_threshold=0.5, target_sizes=sizes)
-        for (row, face, im), r in zip(batch, res):
+        for (row, face, (im, raw)), r in zip(batch, res):
             W, H = im.size
+            if not a.no_keep_faces:
+                (faces_dir / f"{row['id']}_{face}.heic").write_bytes(raw)
             for k, (score, box, mask) in enumerate(zip(r["scores"], r["boxes"], r["masks"])):
                 x0, y0, x1, y1 = [float(v) * DOWN for v in box]
                 if x1 - x0 < a.min_side or y1 - y0 < a.min_side:
