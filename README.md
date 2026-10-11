@@ -1,32 +1,20 @@
 # Typology Machine
 
-Pick a city and an object type (doors, manhole covers, shop signs, galerías…). Find every instance in
-street-level imagery, straighten it to a frontal view, remove duplicates, and lay the results out as a
-Becher-style typology grid. Then cluster them to find the city's sub-types.
+Find every instance of some object type in a city's street-level photos and lay them out as a Becher-style
+typology grid. Dedupe, cluster into sub-types, maybe watch them change over the years. A Coruña first.
 
-## Status
-Exploring the data. No models run yet.
+This is an exploration, not a spec. Scripts under `explore/` are throwaway probes; `NOTES.md` has the
+running log of what we know and what's open. `IDEAS.md` and `PRIOR_ART.md` are reference.
 
-## Data
-Mapillary (free, needs a token). Put `MAPILLARY_TOKEN='MLY|...'` in `.env` (quoted: the token contains `|`).
-Everything under `data/` is gitignored.
+## Setup
+`uv sync`. Put `MAPILLARY_TOKEN='MLY|...'` in `.env` (quoted: the token contains `|`). `data/` is gitignored.
 
 ## Scripts
-- `uv run explore/coverage.py coruna` pulls image points and Mapillary's own detected objects from the
-  z14 vector tiles, writing `data/coruna/{images,features}.csv` plus a summary.
-- `uv run explore/contact_sheet.py coruna 200` builds `data/coruna/contact_sheet.html`, a random sample
-  stratified by year and pano.
+- `explore/coverage.py` pulls Mapillary image points and its detected objects for a city bbox.
+- `explore/contact_sheet.py` random sample of Mapillary images, stratified by year and pano.
+- `explore/crop_features.py` crops every Mapillary-detected object from the best image that sees it.
+- `explore/typology_grid.py` local HTML viewer, one grid per class, from the crops.
+- `explore/lookaround_coverage.py` indexes Apple Look Around panoramas (no key needed).
+- `explore/sam3_vs_mapillary.py` side-by-side of Mapillary's detections and SAM 3 text prompts.
 
-## Findings: A Coruña (2026-10-11)
-- 86k images, 7.5k panos, only 15 contributors. 73% are from 2019 (a dashcam pass). 2025–26 adds about
-  10k, mostly car-roof GoPro panos.
-- Mostly forward-facing car shots on arterial roads. Old town and Mariña have a few hundred images each,
-  mostly from 2016–2019 phones.
-- Avenida da Mariña sample: tunnels, night shots and the road; the galerías are barely in frame. Upper
-  floors need panos or upward-angled shots, so galerías look weak with this data.
-- 21.6k Mapillary detections. Best typology candidates by count: store signs (2.5k), ad signs (2.1k),
-  street lights (3.8k), trash cans (1k), manholes (943), benches (305).
-
-## Model plan
-SAM 3 for exhaustive text-prompted masks; Moondream 3.1 to check crops and name clusters. Compare both on
-about 50 hand-checked images before picking.
+All take the city name (`coruna`) and write under `data/<city>/`.
