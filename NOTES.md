@@ -43,6 +43,18 @@ signs 307, traffic lights 260, benches 192, manholes 167. Viewer: `data/coruna/t
 - Moondream 3 (`moondream/moondream3-preview`, ungated) still to try, for checking crops and naming clusters.
 - The GPU has another process using 16 GB (`uvicorn app:app` on port 8000). 8 GB is enough for SAM 3.
 
+### Apple pipeline (evening)
+- `apple_detect.py`: faces stream from Apple (25/s with 16 threads) through SAM 3 at 0.22 s per face
+  all-in. Side faces only for signs. Thinned to one pano per 6 m. Crops plus quarter-res masks kept,
+  faces discarded. Whole 2026 set at this rate: about 20k panos, 40k faces, 2.5 hours.
+- Prompt sensitivity: "store sign" works, "shop sign" and "storefront sign" return nothing. Worth a
+  small prompt sweep per object type before each big run.
+- "store sign" precision is about half: traffic signs, notices, street plates and the tunnel's
+  emergency exit signs (noisy, dark) come along. `filter_crops.py` (SigLIP zero-shot) sorts them.
+- OCR: Florence-2 large (`<OCR>`) reads clean signs well, 0.4 s per crop. EasyOCR and RapidOCR were
+  much worse on stylised lettering. Moondream 3 would be the upgrade but needs more VRAM than is free.
+- Dedupe still open: the same banner appears from 3 consecutive panos even after thinning.
+
 ### Open threads
 - Which object first? Store signs have the most variety; street lights and trash cans are more Becher.
   Apple's quality might make small things (manholes, doorbells, door handles) viable that Mapillary can't do.
