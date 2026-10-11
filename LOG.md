@@ -105,3 +105,18 @@ Follow-up: the kernel log says Xid 79 "GPU has fallen off the bus" then Xid 154 
 Required". First Xid in 60 days of uptime. The card is shared with `henad_inference` (a BiRefNet
 background-removal service holding 16 GB) and Immich's CUDA machine learning. Plan: reboot, keep the
 henad GPU container down for the night's runs, bring it back after.
+
+## 2026-10-11 · later that night
+
+Rebooted; the card came back clean, henad's inference container left down for the night. Launched the
+whole 2026 set (33k thinned panos, 59.5k faces) and finished OCR on the old-town shop crops.
+
+**Decisions:** OCR stays but isn't first class. Clusters get named by a vision-language model.
+
+**Two ways to cluster.** K-means (24) on the 3.5k deduped old-town signs, once on DINOv2 embeddings
+and once on SigLIP's. HDBSCAN first: it called 85% noise, so k-means. The two spaces sort the same
+signs along different axes. DINOv2 sorts by form: hanging blade signs, long fascias, square plaques,
+engraved stone. SigLIP sorts by meaning: street-name plates, "REBAJAS" sale posters, corporate
+brands, lawyers' and doctors' nameplates, carved lettering. A typology wants the first; the second is
+a catalogue of what the city's signs are *for*. Both worth keeping. Also visible in the SigLIP sheets:
+street-name plates are still in the "shop" set, so the filter needs its calibration pass.
