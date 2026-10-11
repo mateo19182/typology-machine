@@ -1,8 +1,8 @@
-"""Group crops that are the same physical sign seen from several panos: SigLIP embedding similarity plus
+"""Group crops that are the same physical sign seen from several panos: DINOv2 embedding similarity plus
 proximity. Writes groups.jsonl (one row per group with its members and a representative) next to
 instances.jsonl, and embeddings.npy for later clustering.
 
-Usage: uv run explore/dedupe_crops.py coruna store_sign --labels shop,plate [--sim 0.88] [--radius 40]
+Usage: uv run explore/dedupe_crops.py coruna store_sign [--sim 0.9] [--radius 40]
 """
 import argparse
 import json
@@ -13,33 +13,36 @@ import numpy as np
 import torch
 from PIL import Image
 from scipy.spatial import cKDTree
-from transformers import AutoModel, AutoProcessor
+from transformers import AutoImageProcessor, AutoModel
 
-MODEL = "google/siglip-so400m-patch14-384"
+MODEL = "facebook/dinov2-base"  # visual similarity only; no text model needed anywhere in the pipeline
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("city", nargs="?", default="coruna")
     ap.add_argument("slug", nargs="?", default="store_sign")
-    ap.add_argument("--labels", default="shop,plate")
-    ap.add_argument("--sim", type=float, default=0.88)
+    ap.add_argument("--labels", default="", help="optional: only crops with these labels.jsonl labels")
+    ap.add_argument("--sim", type=float, default=0.9)
     ap.add_argument("--radius", type=float, default=40, help="metres between pano positions")
     ap.add_argument("--batch", type=int, default=32)
     a = ap.parse_args()
     base = Path("data") / a.city / "apple" / a.slug
-    keep = {o["id"] for o in map(json.loads, open(base / "labels.jsonl")) if o["label"] in a.labels.split(",")}
-    rows = [r for r in map(json.loads, open(base / "instances.jsonl")) if r["id"] in keep]
+    rows = [r for r in map(json.loads, open(base / "instances.jsonl"))]
+    if a.labels:
+        keep = {o["id"] for o in map(json.loads, open(base / "labels.jsonl")) if o["label"] in a.labels.split(",")}
+        rows = [r for r in rows if r["id"] in keep]
     print(len(rows), "crops")
 
-    proc = AutoProcessor.from_pretrained(MODEL)
-    model = AutoModel.from_pretrained(MODEL, torch_dtype=torch.float16).cuda().eval()
+    proc = AutoImageProcessor.from_pretrained(MODEL)
+    model = AutoModel.from_pretrained(MODEL, dtype=torch.float16).cuda().eval()
     embs = []
     for i in range(0, len(rows), a.batch):
         ims = [Image.open(base / r["crop"]).convert("RGB") for r in rows[i : i + a.batch]]
         iin = proc(images=ims, return_tensors="pt").to("cuda", torch.float16)
         with torch.no_grad():
-            e = model.get_image_features(**iin).pooler_output.float()
+            h = model(**iin).last_hidden_state
+        e = torch.cat([h[:, 0], h[:, 1:].mean(1)], dim=1).float()  # CLS + mean patch
         embs.append((e / e.norm(dim=-1, keepdim=True)).cpu().numpy())
     E = np.concatenate(embs)
     np.save(base / "embeddings.npy", E)

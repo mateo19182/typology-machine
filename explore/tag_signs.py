@@ -1,7 +1,6 @@
-"""Tag every deduped sign crop with a fixed attribute schema using a Qwen3.5 VLM. One sign per call, batched.
+"""Tag every deduped sign crop with a Qwen3.5 VLM: is it a sign, what kind, what business, what it says.
 
-The schema is the typology: grids are built from attribute values, not from unsupervised clusters.
-Closed vocabularies, "unknown" allowed; anything outside the vocabulary is mapped to "unknown".
+Closed vocabularies; anything outside them is mapped to "unknown".
 Writes tags.jsonl next to instances.jsonl (resumable).
 
 Usage: uv run explore/tag_signs.py coruna store_sign [--model Qwen/Qwen3.5-9B] [--batch 8] [--limit N]
@@ -17,46 +16,24 @@ from transformers import AutoModelForImageTextToText, AutoProcessor
 
 MODEL = "Qwen/Qwen3.5-9B"
 
-# The schema. Order matters a little: the model answers in this order, and "kind" first lets it bail out early.
+# The schema. Small on purpose: is it a sign, what kind, what business. Everything else comes from elsewhere
+# (position, street, barrio, date from the pano; form from the mask later if we want it).
 SCHEMA = {
-    # what the object is. Only shop_sign feeds the shop typology; the others are their own series.
-    "kind": ["shop_sign", "street_name_plate", "traffic_or_official", "poster_or_notice", "for_rent_or_sale", "not_a_sign", "unclear"],
-    # where it sits on the building: the Becher axis, the sign as an object
-    "placement": ["fascia", "projecting", "flat_on_wall", "on_glass", "on_awning", "freestanding", "other"],
-    # how it is made
-    "construction": ["flat_panel", "light_box", "dimensional_letters", "neon_tube", "led_letters", "vinyl_on_glass", "painted_directly", "engraved_plate", "fabric", "other"],
-    "material": ["metal", "acrylic_plastic", "wood", "stone", "ceramic_tile", "glass", "fabric", "paper_cardboard", "brass_gold", "unknown"],
-    "illumination": ["none", "backlit", "front_lit", "self_lit_letters", "unknown"],
-    # colour, two values so grids can be sorted by ground and by type
-    "ground_colour": ["black", "white", "grey", "red", "blue", "green", "yellow", "orange", "brown", "gold", "pink_purple", "multicolour", "transparent", "unknown"],
-    "type_colour": ["black", "white", "grey", "red", "blue", "green", "yellow", "orange", "brown", "gold", "pink_purple", "multicolour", "unknown"],
-    # lettering
-    "case": ["all_caps", "mixed_case", "lowercase", "logo_only", "unknown"],
-    "type_style": ["sans", "serif", "script", "display_decorative", "handwritten", "mixed", "none", "unknown"],
-    # the words: what they say, what language. Galician vs Spanish is a real axis in this city.
-    "language": ["galician", "spanish", "english", "other", "ambiguous", "none"],
-    # what the business is, read from the sign only
-    "business": ["bar_cafe", "restaurant", "fashion", "food_shop", "pharmacy_health", "bank_insurance", "real_estate", "professional_office", "hair_beauty", "hotel", "services", "retail_other", "public_institution", "unknown"],
-    "chain": ["chain_or_franchise", "independent", "unknown"],
-    # state of the object
-    "condition": ["new", "good", "worn", "damaged_or_faded", "unknown"],
-    "era_impression": ["traditional_pre_1980", "late_20th_century", "contemporary", "unknown"],
-    # is the crop usable for a grid
-    "complete": ["yes", "partly_cut", "no"],
-    "occluded": ["no", "partly", "mostly"],
+    "is_sign": ["yes", "no"],
+    "kind": ["shop_sign", "street_name_plate", "traffic_or_official", "poster_or_notice", "for_rent_or_sale", "other"],
+    "business": ["bar_cafe", "restaurant", "fashion", "food_shop", "pharmacy_health", "bank_insurance", "real_estate",
+                 "professional_office", "hair_beauty", "hotel", "services", "retail_other", "public_institution", "not_applicable", "unknown"],
 }
-FREE = ["text", "secondary_text"]  # strings
+FREE = ["text"]  # the main words on the sign, as written
 
 
 def build_prompt():
-    lines = ["You are cataloguing shop signs photographed from the street in A Coruña, Galicia, Spain, for a typology in the manner of Bernd and Hilla Becher.",
-             "Look at this one crop and fill in every field with exactly one value from its list. Use 'unknown' when the image does not show it. Do not guess from the words what the object is made of.",
-             "Fields and allowed values:"]
-    for k, v in SCHEMA.items():
-        lines.append(f"- {k}: {', '.join(v)}")
-    lines.append("- text: the main name on the sign as written (string, empty if none)")
-    lines.append("- secondary_text: any other words on the sign (string, empty if none)")
-    lines.append("Answer with one JSON object and nothing else.")
+    lines = ["This is a crop from a street photo in A Coruña, Spain. A detector thought it was a shop sign.",
+             "Answer with one JSON object and nothing else, using exactly one value from each list:",
+             f"- is_sign: {', '.join(SCHEMA['is_sign'])}  (a sign is lettering or a logo made to be read from the street)",
+             f"- kind: {', '.join(SCHEMA['kind'])}",
+             f"- business: {', '.join(SCHEMA['business'])}  (what the shop sells or does, read from the sign; not_applicable if it is not a shop sign)",
+             "- text: the main words on the sign as written (string, empty if none)"]
     return "\n".join(lines)
 
 
@@ -118,7 +95,7 @@ def main():
                 ims.append(im)
             inp = proc(text=[text] * len(ims), images=ims, return_tensors="pt", padding=True).to("cuda")
             with torch.no_grad():
-                gen = model.generate(**inp, max_new_tokens=260, do_sample=False)
+                gen = model.generate(**inp, max_new_tokens=120, do_sample=False)
             answers = proc.batch_decode(gen[:, inp["input_ids"].shape[1]:], skip_special_tokens=True)
             for sid, ans in zip(b, answers):
                 m = re.search(r"\{.*\}", ans, re.S)
