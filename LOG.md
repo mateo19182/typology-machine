@@ -120,3 +120,12 @@ engraved stone. SigLIP sorts by meaning: street-name plates, "REBAJAS" sale post
 brands, lawyers' and doctors' nameplates, carved lettering. A typology wants the first; the second is
 a catalogue of what the city's signs are *for*. Both worth keeping. Also visible in the SigLIP sheets:
 street-name plates are still in the "shop" set, so the filter needs its calibration pass.
+
+**Simplifications, late night.** The attribute schema got cut from sixteen fields to four: is it a sign,
+what kind, what business, what it says. SigLIP left the pipeline: the VLM judges every crop anyway, so
+the zero-shot filter is redundant, and DINOv2 does the look-alike grouping. Three models now: SAM 3
+finds, DINOv2 groups, Qwen3.5 judges. Grouping keeps every view of a sign and annotates it; nothing
+is dropped. And we now keep the untouched HEIC face for every image the detector looked at (about
+1.5 MB each, roughly 90 GB for the 2026 set), because straightening later wants the full-resolution
+original and the crop alone loses its context. Location comes from OpenStreetMap: nearest named
+street within 30 m and nearest barrio point.
