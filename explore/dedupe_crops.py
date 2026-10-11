@@ -1,6 +1,7 @@
 """Group crops that are the same physical sign seen from several panos: DINOv2 embedding similarity plus
-proximity. Writes groups.jsonl (one row per group with its members and a representative) next to
-instances.jsonl, and embeddings.npy for later clustering.
+proximity. Nothing is dropped. Writes groups.jsonl (one row per sign with all its views and a representative)
+and signs.jsonl (one row per crop: which sign it belongs to, how many views, is it the representative),
+plus embeddings.npy for later clustering.
 
 Usage: uv run explore/dedupe_crops.py coruna store_sign [--sim 0.9] [--radius 40]
 """
@@ -66,10 +67,13 @@ def main():
     groups = {}
     for i in range(len(rows)):
         groups.setdefault(find(i), []).append(i)
-    with open(base / "groups.jsonl", "w") as f:
-        for members in groups.values():
+    with open(base / "groups.jsonl", "w") as f, open(base / "signs.jsonl", "w") as g:
+        for k, members in enumerate(groups.values()):
             best = max(members, key=lambda i: rows[i]["score"] * min(rows[i]["box"][2] - rows[i]["box"][0], rows[i]["box"][3] - rows[i]["box"][1]))
-            f.write(json.dumps({"rep": rows[best]["id"], "members": [rows[i]["id"] for i in members]}) + "\n")
+            sign = f"s{k:05d}"
+            f.write(json.dumps({"sign": sign, "rep": rows[best]["id"], "members": [rows[i]["id"] for i in members]}) + "\n")
+            for i in members:
+                g.write(json.dumps({"id": rows[i]["id"], "sign": sign, "views": len(members), "is_rep": i == best}) + "\n")
     sizes = [len(m) for m in groups.values()]
     print(f"{len(rows)} crops -> {len(groups)} groups; singletons {sum(s == 1 for s in sizes)}, largest {max(sizes)}")
 
