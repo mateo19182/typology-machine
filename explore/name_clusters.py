@@ -1,9 +1,9 @@
 """Ask a vision-language model to name each cluster from a contact sheet of its members.
 
-Reads clusters_<emb>.json from cluster_signs.py, builds a 4x4 sheet per cluster, asks Qwen2.5-VL for a short
+Reads clusters_<emb>.json from cluster_signs.py, builds a 4x4 sheet per cluster, asks a Qwen3.5 VLM for a short
 name and a one-line description, writes cluster_names_<emb>.json and prints a table.
 
-Usage: uv run explore/name_clusters.py coruna store_sign --emb dinov2
+Usage: uv run explore/name_clusters.py coruna store_sign --emb dinov2 [--model Qwen/Qwen3.5-9B]
 """
 import argparse
 import json
@@ -13,13 +13,23 @@ from pathlib import Path
 
 import torch
 from PIL import Image
-from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
+from transformers import AutoModelForImageTextToText, AutoProcessor
 
-MODEL = "Qwen/Qwen2.5-VL-3B-Instruct"
+MODEL = "Qwen/Qwen3.5-4B"  # 9B is better but needs the GPU to itself
 PROMPT = (
-    "These are {n} shop signs from the streets of A Coruña, Spain, grouped together by an algorithm because they look alike. "
-    "Ignore what the words say. Describe what the signs have in common as physical objects: shape, material, how they are mounted, "
-    "lighting, typography, colour. Answer with JSON: {{\"name\": <2-4 word name for this type of sign>, \"description\": <one sentence>}}"
+    "This contact sheet shows {n} shop signs from A Coruña, Spain. An algorithm grouped them because they look alike. "
+    "You are a typologist like Bernd and Hilla Becher: ignore the words, look at the objects. "
+    "First decide the dominant value of each attribute across the sheet:\n"
+    "shape: one of [long horizontal fascia band, hanging blade sign, square or small plaque, individual letters on wall, "
+    "window vinyl or glass, poster or printed panel, light box, awning text, other]\n"
+    "material: one of [painted metal, acrylic light box, wood, stone or engraved, glass, fabric, paper or vinyl, mixed]\n"
+    "lighting: one of [backlit, unlit, neon or LED letters, mixed]\n"
+    "palette: one of [dark ground light type, light ground dark type, bright colours, metallic or gold, mixed]\n"
+    "typography: one of [all caps sans, script or cursive, serif, logo or wordmark, mixed]\n"
+    "Then give a specific 2-5 word name for this kind of sign that a curator would use as a grid title, and one sentence on what "
+    "makes the group recognisable. Do not use the words 'store sign', 'street sign' or 'signage' in the name. "
+    "Answer only with JSON: {{\"shape\": ..., \"material\": ..., \"lighting\": ..., \"palette\": ..., \"typography\": ..., "
+    "\"name\": ..., \"description\": ...}}"
 )
 
 
@@ -41,22 +51,23 @@ def main():
     ap.add_argument("city", nargs="?", default="coruna")
     ap.add_argument("slug", nargs="?", default="store_sign")
     ap.add_argument("--emb", default="dinov2")
+    ap.add_argument("--model", default=MODEL)
     a = ap.parse_args()
     base = Path("data") / a.city / "apple" / a.slug
     rows = {r["id"]: r for r in map(json.loads, open(base / "instances.jsonl"))}
     clusters = json.load(open(base / f"clusters_{a.emb}.json"))
 
-    proc = AutoProcessor.from_pretrained(MODEL)
-    model = Qwen2_5_VLForConditionalGeneration.from_pretrained(MODEL, dtype=torch.bfloat16, device_map="cuda").eval()
+    proc = AutoProcessor.from_pretrained(a.model)
+    model = AutoModelForImageTextToText.from_pretrained(a.model, dtype=torch.bfloat16, device_map="cuda").eval()
 
     out = {}
     for c, members in sorted(clusters.items(), key=lambda kv: -len(kv[1])):
         im = sheet([base / rows[m]["crop"] for m in members])
         msgs = [{"role": "user", "content": [{"type": "image"}, {"type": "text", "text": PROMPT.format(n=min(16, len(members)))}]}]
-        text = proc.apply_chat_template(msgs, add_generation_prompt=True)
+        text = proc.apply_chat_template(msgs, add_generation_prompt=True, enable_thinking=False)
         inp = proc(text=[text], images=[im], return_tensors="pt").to("cuda")
         with torch.no_grad():
-            ids = model.generate(**inp, max_new_tokens=120, do_sample=False)
+            ids = model.generate(**inp, max_new_tokens=160, do_sample=False)
         ans = proc.batch_decode(ids[:, inp["input_ids"].shape[1]:], skip_special_tokens=True)[0]
         m = re.search(r"\{.*\}", ans, re.S)
         try:
@@ -65,8 +76,10 @@ def main():
             j = {"name": ans.strip()[:40], "description": ""}
         j["size"] = len(members)
         out[c] = j
-        print(f"{c:>3} {len(members):>4}  {j.get('name', '')!s:32} {j.get('description', '')}", flush=True)
+        attrs = " · ".join(str(j.get(k, "?")) for k in ("shape", "material", "lighting", "palette", "typography"))
+        print(f"{c:>3} {len(members):>4}  {j.get('name', '')!s:34} [{attrs}]  {j.get('description', '')}", flush=True)
     json.dump(out, open(base / f"cluster_names_{a.emb}.json", "w"), ensure_ascii=False, indent=1)
+    print("model:", a.model)
 
 
 if __name__ == "__main__":
