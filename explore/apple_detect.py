@@ -27,6 +27,13 @@ import pillow_heif
 import torch
 from PIL import Image
 from streetlevel import lookaround
+import requests
+
+
+class TimeoutSession(requests.Session):
+    def get(self, *a, **kw):
+        kw.setdefault("timeout", 30)
+        return super().get(*a, **kw)
 
 pillow_heif.register_heif_opener()
 PAD = 0.12
@@ -64,11 +71,19 @@ class Faces:
     def __init__(self, workers):
         self.auth = lookaround.Authenticator()
         self.ex = ThreadPoolExecutor(workers)
+        self.local = threading.local()
+
+    def session(self):
+        # streetlevel's own request has no timeout; a stalled connection would hang a worker for good
+        s = getattr(self.local, "s", None)
+        if s is None:
+            s = self.local.s = TimeoutSession()
+        return s
 
     def fetch(self, row, face):
         for _ in range(3):
             try:
-                data = lookaround.get_panorama_face((int(row["id"]), int(row["build_id"])), face, 0, self.auth)
+                data = lookaround.get_panorama_face((int(row["id"]), int(row["build_id"])), face, 0, self.auth, session=self.session())
                 im = Image.open(BytesIO(data))
                 im.load()
                 return im.convert("RGB")
