@@ -91,7 +91,7 @@ def main():
                     im.save(dst, quality=88)
                 rec = {"id": pano.id, "lat": pano.lat, "lon": pano.lon, "heading": round(math.degrees(pano.heading), 3) if pano.heading is not None else None,
                        "date": str(pano.date)[:7] if pano.date else None, "spot": spot, "is_current": is_current,
-                       "size": list(pano.image_sizes[-1]) if pano.image_sizes else None}
+                       "size": [pano.image_sizes[-1].x, pano.image_sizes[-1].y] if pano.image_sizes else None}
                 with lock:
                     open(log_path, "a").write(json.dumps(rec) + "\n")
                     done.add(pano.id)
