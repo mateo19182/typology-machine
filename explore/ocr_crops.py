@@ -20,23 +20,28 @@ def main():
     ap.add_argument("--min-score", type=float, default=0.5)
     ap.add_argument("--batch", type=int, default=8)
     ap.add_argument("--only-label", help="use labels.jsonl from filter_crops and keep only this label")
+    ap.add_argument("--ids-file", help="only these crop ids (one per line)")
     a = ap.parse_args()
     base = Path("data") / a.city / "apple" / a.slug
     out = base / "ocr.jsonl"
     done = {json.loads(l)["id"] for l in open(out)} if out.exists() else set()
     rows = [r for r in map(json.loads, open(base / "instances.jsonl")) if r["score"] >= a.min_score and r["id"] not in done]
+    if a.ids_file:
+        ids = set(Path(a.ids_file).read_text().split())
+        rows = [r for r in rows if r["id"] in ids]
     if a.only_label:
         keep = {o["id"] for o in map(json.loads, open(base / "labels.jsonl")) if o["label"] in a.only_label.split(",")}
         rows = [r for r in rows if r["id"] in keep]
     print(f"{len(rows)} crops to OCR ({len(done)} done)")
 
     proc = AutoProcessor.from_pretrained(MODEL)
-    model = AutoModelForImageTextToText.from_pretrained(MODEL, torch_dtype=torch.float16).cuda().eval()
+    dev = "cuda" if torch.cuda.is_available() else "cpu"
+    model = AutoModelForImageTextToText.from_pretrained(MODEL, dtype=torch.float16 if dev == "cuda" else torch.float32).to(dev).eval()
     with open(out, "a") as f:
         for i in range(0, len(rows), a.batch):
             batch = rows[i : i + a.batch]
             ims = [Image.open(base / r["crop"]).convert("RGB") for r in batch]
-            inp = proc(text=["<OCR>"] * len(ims), images=ims, return_tensors="pt").to("cuda", torch.float16)
+            inp = proc(text=["<OCR>"] * len(ims), images=ims, return_tensors="pt").to(dev, torch.float16 if dev == "cuda" else torch.float32)
             with torch.no_grad():
                 ids = model.generate(input_ids=inp["input_ids"], pixel_values=inp["pixel_values"], max_new_tokens=48, num_beams=3)
             for r, txt in zip(batch, proc.batch_decode(ids, skip_special_tokens=True)):

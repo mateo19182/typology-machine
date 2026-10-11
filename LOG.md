@@ -94,3 +94,14 @@ three beams and batch 16 does not fit next to the 16 GB the other service holds.
 
 Started the frontend: a dark wall of tiles with three readings of the same signs, the photo, the
 silhouette from the SAM mask, and the OCR'd words alone.
+
+**Late: the GPU fell off the bus.** Florence-2 had read 1,698 of the 7,640 shop crops when CUDA
+returned "unspecified launch failure" and nvidia-smi stopped seeing the card ("Unable to determine
+the device handle for GPU0"). The card is still on the PCI bus and the other service that holds 16 GB
+is still running, blind. Nothing in our code does anything exotic, so this looks like a driver or
+hardware hiccup rather than our bug; needs a module reload or a reboot. The 240 signs on the website
+got their words from Florence-2 on 32 CPU cores instead.
+Follow-up: the kernel log says Xid 79 "GPU has fallen off the bus" then Xid 154 "Node Reboot
+Required". First Xid in 60 days of uptime. The card is shared with `henad_inference` (a BiRefNet
+background-removal service holding 16 GB) and Immich's CUDA machine learning. Plan: reboot, keep the
+henad GPU container down for the night's runs, bring it back after.
