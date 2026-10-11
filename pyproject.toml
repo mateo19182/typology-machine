@@ -4,11 +4,14 @@ version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
     "accelerate>=1.15.0",
+    "easyocr>=1.7.2",
     "mapbox-vector-tile>=2.2.0",
     "mercantile>=1.2.1",
+    "numpy>=2.5.4",
     "pillow>=12.3.0",
     "pillow-heif>=1.8.1",
     "python-dotenv>=1.2.4",
+    "rapidocr-onnxruntime>=1.4.4",
     "requests>=2.34.2",
     "streetlevel>=0.12.12",
     "torch>=2.14.1",
