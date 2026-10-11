@@ -23,12 +23,13 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("city", nargs="?", default="coruna")
     ap.add_argument("slug", nargs="?", default="store_sign")
+    ap.add_argument("--source", default="apple", help="apple or gsv")
     ap.add_argument("--labels", default="", help="optional: only crops with these labels.jsonl labels")
     ap.add_argument("--sim", type=float, default=0.9)
     ap.add_argument("--radius", type=float, default=40, help="metres between pano positions")
     ap.add_argument("--batch", type=int, default=32)
     a = ap.parse_args()
-    base = Path("data") / a.city / "apple" / a.slug
+    base = Path("data") / a.city / a.source / a.slug
     rows = [r for r in map(json.loads, open(base / "instances.jsonl"))]
     if a.labels:
         keep = {o["id"] for o in map(json.loads, open(base / "labels.jsonl")) if o["label"] in a.labels.split(",")}

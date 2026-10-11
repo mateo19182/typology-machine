@@ -20,10 +20,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("city", nargs="?", default="coruna")
     ap.add_argument("slug", nargs="?", default="store_sign")
+    ap.add_argument("--source", default="apple", help="apple or gsv")
     ap.add_argument("--max-dist", type=float, default=30)
     a = ap.parse_args()
     data = Path("data") / a.city
-    base = data / "apple" / a.slug
+    base = data / a.source / a.slug
     lat0 = 43.36
 
     def xy(lat, lon):

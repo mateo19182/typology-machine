@@ -51,6 +51,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("city", nargs="?", default="coruna")
     ap.add_argument("slug", nargs="?", default="store_sign")
+    ap.add_argument("--source", default="apple", help="apple or gsv")
     ap.add_argument("--model", default=MODEL)
     ap.add_argument("--batch", type=int, default=8)
     ap.add_argument("--limit", type=int)
@@ -58,7 +59,7 @@ def main():
     ap.add_argument("--max-side", type=int, default=768, help="downscale crops before the VLM")
     ap.add_argument("--all", action="store_true", help="tag every instance, not just dedupe representatives")
     a = ap.parse_args()
-    base = Path("data") / a.city / a.slug if (Path("data") / a.city / a.slug).exists() else Path("data") / a.city / "apple" / a.slug
+    base = Path("data") / a.city / a.source / a.slug
     rows = {r["id"]: r for r in map(json.loads, open(base / "instances.jsonl"))}
     if a.all or not (base / "groups.jsonl").exists():
         ids = list(rows)

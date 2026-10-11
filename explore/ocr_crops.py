@@ -17,12 +17,13 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("city", nargs="?", default="coruna")
     ap.add_argument("slug", nargs="?", default="store_sign")
+    ap.add_argument("--source", default="apple", help="apple or gsv")
     ap.add_argument("--min-score", type=float, default=0.5)
     ap.add_argument("--batch", type=int, default=8)
     ap.add_argument("--only-label", help="use labels.jsonl from filter_crops and keep only this label")
     ap.add_argument("--ids-file", help="only these crop ids (one per line)")
     a = ap.parse_args()
-    base = Path("data") / a.city / "apple" / a.slug
+    base = Path("data") / a.city / a.source / a.slug
     out = base / "ocr.jsonl"
     done = {json.loads(l)["id"] for l in open(out)} if out.exists() else set()
     rows = [r for r in map(json.loads, open(base / "instances.jsonl")) if r["score"] >= a.min_score and r["id"] not in done]

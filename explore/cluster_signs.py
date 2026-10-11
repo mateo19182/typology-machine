@@ -40,12 +40,13 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("city", nargs="?", default="coruna")
     ap.add_argument("slug", nargs="?", default="store_sign")
+    ap.add_argument("--source", default="apple", help="apple or gsv")
     ap.add_argument("--emb", choices=["siglip", "dinov2"], default="dinov2")
     ap.add_argument("--min-cluster", type=int, default=12)
     ap.add_argument("--k", type=int, default=0, help="use k-means with this k instead of HDBSCAN")
     ap.add_argument("--min-score", type=float, default=0.6)
     a = ap.parse_args()
-    base = Path("data") / a.city / "apple" / a.slug
+    base = Path("data") / a.city / a.source / a.slug
     rows = {r["id"]: r for r in map(json.loads, open(base / "instances.jsonl"))}
     reps = [g["rep"] for g in map(json.loads, open(base / "groups.jsonl"))]
     reps = [r for r in reps if rows[r]["score"] >= a.min_score]
