@@ -129,3 +129,13 @@ is dropped. And we now keep the untouched HEIC face for every image the detector
 1.5 MB each, roughly 90 GB for the 2026 set), because straightening later wants the full-resolution
 original and the crop alone loses its context. Location comes from OpenStreetMap: nearest named
 street within 30 m and nearest barrio point.
+
+**Google is back, and it's the time machine.** The reason both unofficial libraries failed earlier:
+Google turned off one internal endpoint, `GeoPhotoService.SingleImageSearch`, the "find a panorama
+near this coordinate" call (the server literally answers "decommissioned and turned down"). But the
+rest still works without a key: Google's own coverage tiles list panorama ids (44k in the Coruña
+box, 25 seconds for the whole city), the per-id metadata still comes with the full history (a
+Mariña panorama has 11 earlier captures, back to October 2008), and full-resolution panoramas
+(16384×8192, plain equirectangular) download in a few hundred milliseconds. A random sample of
+panos has a median of seven earlier captures; about a third go back to 2008. So the time axis is
+real: the same shop sign in 2008, 2010, 2013, 2017, 2024.

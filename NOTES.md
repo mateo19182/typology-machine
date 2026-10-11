@@ -16,7 +16,7 @@ Running log. Nothing here is a commitment; newest at the top.
 |---|---|---|---|
 | Mapillary | 86k images, 7.5k panos, 21.6k detected objects | official API, free | 73% is one 2019 dashcam pass. Low-res, blurry, forward-facing. Comes with object detections and 3D-placed features, which is what the crops use. |
 | Apple Look Around | 105k car panoramas, 6 faces each at 5632×4864 | `streetlevel` (reverse-engineered, no key) | Superb quality. Dates: 2019-04 14k, 2023-05 5k, 2024-07 14k, 2025-03/04 11k, 2026-07 61k. Apple only serves the latest pass per street, so dates are a patchwork, not a time machine. No detections, we bring our own. Faces use Apple's own projection, needs reprojecting before straightening. |
-| Google Street View | yes, with history back to ~2009 | unofficial endpoints only | `streetlevel` and `streetview` both fail everywhere right now (Google changed something). Re-check later; it is the only real time machine. |
+| Google Street View | 44k panos, history back to 2008 (median 7 captures per spot) | `streetlevel` coverage tiles + per-id metadata, no key | Only the location-search endpoint is dead (`SingleImageSearch`); tiles, metadata with history and full-res 16384×8192 equirect downloads all work. The time machine. |
 | Bing Streetside | not checked properly | `streetlevel` | Spain coverage is thin anyway. |
 | KartaView, Panoramax | nothing useful | | |
 | Wikimedia Commons | 500+ geotagged files within 2 km of the Mariña | API | Could feed a historical layer for a few famous objects. |
