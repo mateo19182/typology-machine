@@ -25,8 +25,9 @@ def main():
     ap.add_argument("slug", nargs="?", default="store_sign")
     ap.add_argument("--source", default="apple", help="apple or gsv")
     ap.add_argument("--labels", default="", help="optional: only crops with these labels.jsonl labels")
-    ap.add_argument("--sim", type=float, default=0.9)
-    ap.add_argument("--radius", type=float, default=40, help="metres between pano positions")
+    ap.add_argument("--sim", type=float, default=0.8)
+    ap.add_argument("--radius", type=float, default=30, help="metres between pano positions")
+    ap.add_argument("--max-extent", type=float, default=50, help="split groups whose pano positions spread wider than this (m)")
     ap.add_argument("--batch", type=int, default=32)
     a = ap.parse_args()
     base = Path("data") / a.city / a.source / a.slug
@@ -68,6 +69,21 @@ def main():
     groups = {}
     for i in range(len(rows)):
         groups.setdefault(find(i), []).append(i)
+    # repeated identical designs (chain signage, tunnel exit signs) chain-merge along a street; split those by
+    # position so a group is one physical spot
+    from scipy.cluster.hierarchy import fcluster, linkage
+
+    split = {}
+    for k, members in groups.items():
+        if len(members) > 1:
+            pts = xy[members]
+            if np.ptp(pts, axis=0).max() > a.max_extent:
+                lab = fcluster(linkage(pts, method="complete"), a.max_extent, criterion="distance")
+                for m, l in zip(members, lab):
+                    split.setdefault((k, int(l)), []).append(m)
+                continue
+        split[(k, 0)] = members
+    groups = split
     with open(base / "groups.jsonl", "w") as f, open(base / "signs.jsonl", "w") as g:
         for k, members in enumerate(groups.values()):
             best = max(members, key=lambda i: rows[i]["score"] * min(rows[i]["box"][2] - rows[i]["box"][0], rows[i]["box"][3] - rows[i]["box"][1]))
