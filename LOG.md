@@ -77,3 +77,20 @@ stages are coming: a "is this actually a shop's sign" filter, and dedupe across 
 default model is Chinese-trained and hallucinates CJK characters on Latin signs; trying EasyOCR
 (Spanish) and Florence-2 next. Launched the old town and centre (3,450 panos, 6,876 faces) as the
 first real slice.
+
+**Night: first real slice.** Old town and centre, 3,450 panos, 6,876 side faces, 24.6 minutes,
+17,767 "store sign" instances. SigLIP zero-shot sorting over the crops: shop 2.1k, "street plate"
+5.5k (which on inspection is mostly small wall-mounted shop signs, so the label description was bad
+but the split is still useful), notices 3.8k, traffic 3.4k, other 2.9k, tunnel exit signs 100.
+Shop plus plate is the working set: 7,640 crops.
+
+Dedupe by SigLIP similarity plus proximity (same sign within 40 m, cosine ≥ 0.88, different panos):
+7,640 crops become 4,681 signs. Porcelanosa's fascia was captured 34 times, a crêperie 25 times.
+So in the dense streets a sign is seen from about three to four thinned panos on average, and far
+more where the car crawled.
+
+Small lessons: a `pgrep -f` wait loop that matches its own command line never ends. Florence-2 with
+three beams and batch 16 does not fit next to the 16 GB the other service holds. 
+
+Started the frontend: a dark wall of tiles with three readings of the same signs, the photo, the
+silhouette from the SAM mask, and the OCR'd words alone.

@@ -19,11 +19,15 @@ def main():
     ap.add_argument("slug", nargs="?", default="store_sign")
     ap.add_argument("--min-score", type=float, default=0.5)
     ap.add_argument("--batch", type=int, default=8)
+    ap.add_argument("--only-label", help="use labels.jsonl from filter_crops and keep only this label")
     a = ap.parse_args()
     base = Path("data") / a.city / "apple" / a.slug
     out = base / "ocr.jsonl"
     done = {json.loads(l)["id"] for l in open(out)} if out.exists() else set()
     rows = [r for r in map(json.loads, open(base / "instances.jsonl")) if r["score"] >= a.min_score and r["id"] not in done]
+    if a.only_label:
+        keep = {o["id"] for o in map(json.loads, open(base / "labels.jsonl")) if o["label"] in a.only_label.split(",")}
+        rows = [r for r in rows if r["id"] in keep]
     print(f"{len(rows)} crops to OCR ({len(done)} done)")
 
     proc = AutoProcessor.from_pretrained(MODEL)
