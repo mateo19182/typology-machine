@@ -29,9 +29,12 @@ def main():
     ap.add_argument("--radius", type=float, default=30, help="metres between pano positions")
     ap.add_argument("--max-extent", type=float, default=50, help="split groups whose pano positions spread wider than this (m)")
     ap.add_argument("--batch", type=int, default=32)
+    ap.add_argument("--current-only", action="store_true", help="gsv: only crops from the current pass (no history)")
     a = ap.parse_args()
     base = Path("data") / a.city / a.source / a.slug
     rows = [r for r in map(json.loads, open(base / "instances.jsonl"))]
+    if a.current_only:
+        rows = [r for r in rows if r.get("is_current", True)]
     if a.labels:
         keep = {o["id"] for o in map(json.loads, open(base / "labels.jsonl")) if o["label"] in a.labels.split(",")}
         rows = [r for r in rows if r["id"] in keep]

@@ -14,6 +14,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from cluster_report import build_report
 from PIL import Image
 from sklearn.cluster import HDBSCAN, KMeans
 from sklearn.decomposition import PCA
@@ -93,6 +94,14 @@ def main():
         sheet.save(out / f"{'noise' if c == -1 else c:0>2}.jpg" if c != -1 else out / "noise.jpg", quality=85)
     json.dump(clusters, open(base / f"clusters_{a.emb}.json", "w"))
     print("sheets ->", out)
+    if a.emb == "dinov2":
+        # Cluster labels may have changed, so old generated names no longer apply.
+        names = base / "cluster_names_dinov2.json"
+        if names.exists():
+            names.rename(base / "cluster_names_dinov2.previous.json")
+        build_report(base, a.emb, {"algorithm": "kmeans" if a.k else "hdbscan", "k": a.k,
+                                  "min_cluster_size": a.min_cluster, "min_samples": 5,
+                                  "pca_dimensions": 50, "min_score": a.min_score, "random_state": 0})
 
 
 if __name__ == "__main__":

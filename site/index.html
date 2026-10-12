@@ -42,6 +42,7 @@ body[data-view="map"] .wall, body[data-view="map"] .more, body[data-view="map"] 
 .leaflet-bar a { background: var(--tile); color: var(--fg); border-color: var(--line) }
 .pin { background: var(--tile); border: 1px solid rgba(215,154,58,.8); padding: 1px; cursor: pointer; box-shadow: 0 1px 6px rgba(0,0,0,.6) }
 .pin img { display: block; height: 100%; width: auto; max-width: none }
+.pin.g { border-color: rgba(127,179,213,.8) }
 .pin:hover { border-color: var(--fg); z-index: 1000 !important }
 
 .detail { position: fixed; inset: 0; background: rgba(10,11,13,.94); display: none; z-index: 2000; padding: 16px; overflow: auto }
@@ -83,7 +84,8 @@ footer { padding: 28px 16px; color: var(--dim); display: flex; flex-wrap: wrap; 
 <div class="more" id="more"></div>
 
 <footer>
-  <span>Apple Look Around, 2026</span>
+  <span>Apple Look Around</span>
+  <span>Google Street View</span>
   <span>SAM 3</span>
   <span>DINOv2</span>
 </footer>
@@ -161,7 +163,8 @@ footer { padding: 28px 16px; color: var(--dim); display: flex; flex-wrap: wrap; 
       attribution: 'Imagery &copy; Esri, Maxar, Earthstar Geographics' }).addTo(map);
     const canvas = L.canvas({ padding: 0.5 });
     const radius = z => z < 13 ? 1.2 : z < 15 ? 2 : 3.5;
-    const dots = signs.map(s => L.circleMarker([s.la, s.lo], { renderer: canvas, radius: radius(15), stroke: false, fillColor: '#d79a3a', fillOpacity: 0.9 })
+    const colour = s => s.src === 'g' ? '#7fb3d5' : '#d79a3a';
+    const dots = signs.map(s => L.circleMarker([s.la, s.lo], { renderer: canvas, radius: radius(15), stroke: false, fillColor: colour(s), fillOpacity: 0.9 })
       .on('click', () => map.setView([s.la, s.lo], PIN_ZOOM)));
     dotLayer = L.layerGroup(dots);
     pinLayer = L.layerGroup();

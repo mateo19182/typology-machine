@@ -80,6 +80,9 @@ def main():
         attrs = " · ".join(str(j.get(k, "?")) for k in ("shape", "material", "lighting", "palette", "typography"))
         print(f"{c:>3} {len(members):>4}  {j.get('name', '')!s:34} [{attrs}]  {j.get('description', '')}", flush=True)
     json.dump(out, open(base / f"cluster_names_{a.emb}.json", "w"), ensure_ascii=False, indent=1)
+    if a.emb == "dinov2":
+        from cluster_report import build_report
+        build_report(base, a.emb)
     print("model:", a.model)
 
 
