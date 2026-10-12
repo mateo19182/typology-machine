@@ -1,7 +1,6 @@
-"""Build the static site: one tile per triangulated sign (its sharpest view), a small mask for the shapes
-mode, positions for the map, street and barrio, and tags when tags.jsonl exists.
+"""Build the static site: one tile per triangulated sign (its sharpest view), positions for the map, street and barrio, and tags when tags.jsonl exists.
 
-Writes <out>/data.json, <out>/img/<sign>.jpg, <out>/mask/<sign>.png and copies site/index.html there.
+Writes <out>/data.json, <out>/img/<sign>.jpg and copies site/index.html there.
 Usage: uv run explore/export_site.py coruna store_sign --out data/coruna/site [--min-rays 2] [--size 256]
 """
 import argparse
@@ -18,14 +17,11 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def thumb(job):
-    src, dst, msrc, mdst, size = job
+    src, dst, size = job
     try:
         im = Image.open(src).convert("RGB")
         im.thumbnail((size, size))
         im.save(dst, quality=80, optimize=True)
-        m = Image.open(msrc).convert("L")
-        m.thumbnail((96, 96))
-        m.point(lambda v: 255 if v > 127 else 0).convert("1").save(mdst, "PNG", optimize=True)
         return im.width, im.height
     except Exception as e:
         print("failed", src, repr(e)[:80])
@@ -47,7 +43,6 @@ def main():
     base = Path("data") / a.city / a.source / a.slug
     out = Path(a.out)
     (out / "img").mkdir(parents=True, exist_ok=True)
-    (out / "mask").mkdir(exist_ok=True)
 
     rows = {r["id"]: r for r in map(json.loads, open(base / "instances.jsonl"))}
     groups = {g["sign"]: g for g in map(json.loads, open(base / "groups.jsonl"))}
@@ -69,7 +64,7 @@ def main():
     picks.sort(key=lambda x: -x[1]["score"])
     print(len(picks), "signs of", len(pos), "triangulated")
 
-    jobs = [(base / r["crop"], out / "img" / f"{p['sign']}.jpg", base / r["mask"], out / "mask" / f"{p['sign']}.png", a.size) for p, r, _ in picks]
+    jobs = [(base / r["crop"], out / "img" / f"{p['sign']}.jpg", a.size) for p, r, _ in picks]
     with ProcessPoolExecutor(a.workers) as ex:
         sizes = list(ex.map(thumb, jobs, chunksize=32))
 

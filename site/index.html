@@ -28,26 +28,20 @@ nav button:focus-visible, .tile:focus-visible, .detail button:focus-visible, .de
 .tile { position: relative; aspect-ratio: 1; background: var(--tile); border: 0; padding: 0; cursor: pointer; overflow: hidden; display: grid; place-items: center }
 .tile:hover { background: var(--tile-hi) }
 .tile img { width: 84%; height: 84%; object-fit: contain; display: block }
-.tile .mask { position: absolute; inset: 8%; background-color: var(--fg); opacity: .6; -webkit-mask: var(--m) center / contain no-repeat; mask: var(--m) center / contain no-repeat }
-body[data-mode="signs"] .tile .mask { display: none }
-body[data-mode="shapes"] .tile img { display: none }
 .more { height: 1px }
 
-#map { flex: 1; min-height: 0; display: none }
+#map { flex: 1; min-height: 0; display: none; background: #0a0b0d }
 body[data-view="map"] #map { display: block }
-body[data-view="map"] .wall, body[data-view="map"] footer { display: none }
-#map { background: #0a0b0d }
+body[data-view="map"] .wall, body[data-view="map"] .more, body[data-view="map"] footer { display: none }
 .leaflet-container { font: 10px var(--mono) }
 .leaflet-control-attribution { background: rgba(10,11,13,.7) !important; color: var(--dim) }
 .leaflet-control-attribution a { color: var(--dim) }
 .leaflet-bar a { background: var(--tile); color: var(--fg); border-color: var(--line) }
-.leaflet-popup-content-wrapper { background: var(--tile); color: var(--fg); font: 11px var(--mono); border-radius: 0; cursor: pointer; box-shadow: none }
-.leaflet-popup-content { margin: 6px }
-.leaflet-popup-content img { display: block; max-width: 160px; max-height: 110px }
-.leaflet-popup-tip { background: var(--tile) }
-.leaflet-popup-close-button { display: none }
+.pin { background: var(--tile); border: 1px solid rgba(215,154,58,.8); padding: 1px; cursor: pointer; box-shadow: 0 1px 6px rgba(0,0,0,.6) }
+.pin img { display: block; height: 100%; width: auto; max-width: none }
+.pin:hover { border-color: var(--fg); z-index: 1000 !important }
 
-.detail { position: fixed; inset: 0; background: rgba(10,11,13,.94); display: none; z-index: 10; padding: 16px; overflow: auto }
+.detail { position: fixed; inset: 0; background: rgba(10,11,13,.94); display: none; z-index: 2000; padding: 16px; overflow: auto }
 .detail[open] { display: grid; grid-template-rows: auto 1fr auto }
 .detail .top { display: flex; justify-content: space-between; gap: 16px; align-items: baseline }
 .detail figure { margin: 0; display: grid; place-items: center; min-height: 0 }
@@ -62,21 +56,20 @@ footer { padding: 28px 16px; color: var(--dim); display: flex; flex-wrap: wrap; 
 @media (max-width: 520px) { .wall { grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)) } }
 </style>
 </head>
-<body data-mode="signs" data-view="wall">
+<body data-view="map">
 
 <header>
   <div class="mast"><b>Typology Machine</b> &nbsp;·&nbsp; A Coruña &nbsp;·&nbsp; <span id="count">—</span></div>
   <nav aria-label="View">
-    <button id="m-signs" aria-pressed="true">Signs</button>
-    <button id="m-shapes" aria-pressed="false">Shapes</button>
-    <button id="v-map" aria-pressed="false">Map</button>
+    <button id="v-map" aria-pressed="true">Map</button>
+    <button id="v-wall" aria-pressed="false">Wall</button>
     <button id="shuffle">Shuffle</button>
   </nav>
 </header>
 
+<div id="map"></div>
 <main class="wall" id="wall" aria-label="Signs"></main>
 <div class="more" id="more"></div>
-<div id="map"></div>
 
 <footer>
   <span>Apple Look Around, 2026</span>
@@ -117,48 +110,60 @@ footer { padding: 28px 16px; color: var(--dim); display: flex; flex-wrap: wrap; 
     const s = signs[idx];
     const b = document.createElement('button');
     b.className = 'tile'; b.dataset.i = idx;
-    b.style.setProperty('--m', `url("mask/${s.id}.png")`);
     b.setAttribute('aria-label', s.t || s.b || 'sign');
-    b.innerHTML = `<img loading="lazy" src="img/${s.id}.jpg" width="${s.w}" height="${s.h}" alt=""><span class="mask" aria-hidden="true"></span>`;
-    b.addEventListener('click', () => open(signs[idx]));
+    b.innerHTML = `<img loading="lazy" src="img/${s.id}.jpg" width="${s.w}" height="${s.h}" alt="">`;
+    b.addEventListener('click', () => open(s));
     return b;
   }
   function more() { const end = Math.min(order.length, shown + CHUNK); for (let k = shown; k < end; k++) wall.appendChild(tile(order[k])); shown = end; }
   function render() { wall.innerHTML = ''; shown = 0; more(); }
   new IntersectionObserver(es => { if (es[0].isIntersecting && shown < order.length) more(); }, { rootMargin: '1200px' }).observe($('more'));
-
-  // ---- modes
-  const modes = ['signs', 'shapes'];
-  function setMode(m) { document.body.dataset.mode = m; modes.forEach(x => $('m-' + x).setAttribute('aria-pressed', String(x === m))); }
-  modes.forEach(m => $('m-' + m).addEventListener('click', () => { setMode(m); setView('wall'); }));
   $('shuffle').addEventListener('click', () => { for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; } render(); setView('wall'); });
 
-  // ---- map
-  let map = null, popup = null;
+  // ---- map: satellite imagery; dots when far out, the signs themselves once close enough
+  const PIN_ZOOM = 17, PIN_H = 36;
+  let map = null, dotLayer = null, pinLayer = null;
   function setView(v) {
     document.body.dataset.view = v;
     $('v-map').setAttribute('aria-pressed', String(v === 'map'));
-    modes.forEach(x => $('m-' + x).setAttribute('aria-pressed', String(v === 'wall' && document.body.dataset.mode === x)));
+    $('v-wall').setAttribute('aria-pressed', String(v === 'wall'));
     if (v === 'map') { if (!map) buildMap(); else map.invalidateSize(); }
   }
   $('v-map').addEventListener('click', () => setView('map'));
+  $('v-wall').addEventListener('click', () => setView('wall'));
   function buildMap() {
-    map = L.map('map', { preferCanvas: true, zoomControl: true, attributionControl: true }).setView([43.3665, -8.4065], 14);
-    L.tileLayer('https://basemaps.cartocdn.com/rastertiles/dark_nolabels/{z}/{x}/{y}{r}.png?key=REMOVED_CARTO_API_KEY', { maxZoom: 20,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>' }).addTo(map);
+    map = L.map('map', { preferCanvas: true, zoomControl: true }).setView([43.3665, -8.4065], 15);
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20, maxNativeZoom: 19,
+      attribution: 'Imagery &copy; Esri, Maxar, Earthstar Geographics' }).addTo(map);
     const canvas = L.canvas({ padding: 0.5 });
-    const radius = z => z < 13 ? 1.2 : z < 16 ? 2.2 : z < 18 ? 4 : 6;
-    const dots = signs.map(s => L.circleMarker([s.la, s.lo], { renderer: canvas, radius: radius(14), stroke: false, fillColor: '#d79a3a', fillOpacity: 0.85 })
-      .on('click', () => {
-        if (popup) popup.remove();
-        popup = L.popup({ offset: [0, -4], closeButton: false }).setLatLng([s.la, s.lo])
-          .setContent(`<img src="img/${s.id}.jpg" alt=""><div>${esc(s.t || s.b || s.st || '')}</div>`).openOn(map);
-        popup.getElement().addEventListener('click', () => open(s));
-      }));
-    L.layerGroup(dots).addTo(map);
-    map.on('zoomend', () => { const r = radius(map.getZoom()); dots.forEach(d => d.setRadius(r)); });
+    const radius = z => z < 13 ? 1.2 : z < 15 ? 2 : 3.5;
+    const dots = signs.map(s => L.circleMarker([s.la, s.lo], { renderer: canvas, radius: radius(15), stroke: false, fillColor: '#d79a3a', fillOpacity: 0.9 })
+      .on('click', () => map.setView([s.la, s.lo], PIN_ZOOM)));
+    dotLayer = L.layerGroup(dots);
+    pinLayer = L.layerGroup();
+    function refresh() {
+      const z = map.getZoom();
+      if (z < PIN_ZOOM) {
+        if (map.hasLayer(pinLayer)) map.removeLayer(pinLayer);
+        if (!map.hasLayer(dotLayer)) dotLayer.addTo(map);
+        const r = radius(z); dots.forEach(d => d.setRadius(r));
+        return;
+      }
+      if (map.hasLayer(dotLayer)) map.removeLayer(dotLayer);
+      pinLayer.clearLayers();
+      const b = map.getBounds().pad(0.2);
+      const h = z >= 19 ? PIN_H * 1.6 : PIN_H;
+      for (const s of signs) {
+        if (!b.contains([s.la, s.lo])) continue;
+        const w = Math.round(h * s.w / s.h);
+        const icon = L.divIcon({ className: 'pin', html: `<img src="img/${s.id}.jpg" alt="">`, iconSize: [w + 4, h + 4], iconAnchor: [(w + 4) / 2, (h + 4) / 2] });
+        L.marker([s.la, s.lo], { icon, title: s.t || s.b || s.st || '' }).on('click', () => open(s)).addTo(pinLayer);
+      }
+      if (!map.hasLayer(pinLayer)) pinLayer.addTo(map);
+    }
+    map.on('zoomend moveend', refresh);
+    refresh();
   }
-  function esc(t) { return (t || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
   // ---- detail
   const detail = $('detail');
@@ -185,6 +190,7 @@ footer { padding: 28px 16px; color: var(--dim); display: flex; flex-wrap: wrap; 
   });
 
   render();
+  setView('map');
 })();
 </script>
 </body>
