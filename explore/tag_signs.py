@@ -1,6 +1,7 @@
 """Tag every deduped sign crop with a Qwen3.5 VLM: is it a sign, what kind, what business, what it says.
 
-Closed vocabularies; anything outside them is mapped to "unknown".
+is_sign and kind are closed vocabularies (anything outside them maps to "unknown"); business and text are free text,
+because we cannot know in advance what the city's shops are. Normalise business later from the data.
 Writes tags.jsonl next to instances.jsonl (resumable).
 
 Usage: uv run explore/tag_signs.py coruna store_sign [--model Qwen/Qwen3.5-9B] [--batch 8] [--limit N]
@@ -21,10 +22,8 @@ MODEL = "Qwen/Qwen3.5-9B"
 SCHEMA = {
     "is_sign": ["yes", "no"],
     "kind": ["shop_sign", "street_name_plate", "traffic_or_official", "poster_or_notice", "for_rent_or_sale", "other"],
-    "business": ["bar_cafe", "restaurant", "fashion", "food_shop", "pharmacy_health", "bank_insurance", "real_estate",
-                 "professional_office", "hair_beauty", "hotel", "services", "retail_other", "public_institution", "not_applicable", "unknown"],
 }
-FREE = ["text"]  # the main words on the sign, as written
+FREE = ["business", "text"]  # what the shop sells or does; the main words on the sign, as written
 
 
 def build_prompt():
@@ -32,7 +31,7 @@ def build_prompt():
              "Answer with one JSON object and nothing else, using exactly one value from each list:",
              f"- is_sign: {', '.join(SCHEMA['is_sign'])}  (a sign is lettering or a logo made to be read from the street)",
              f"- kind: {', '.join(SCHEMA['kind'])}",
-             f"- business: {', '.join(SCHEMA['business'])}  (what the shop sells or does, read from the sign; not_applicable if it is not a shop sign)",
+             "- business: what the shop sells or does, in two or three plain English words (e.g. \"bakery\", \"hair salon\", \"law office\"); empty string if it is not a shop sign or you cannot tell",
              "- text: the main words on the sign as written (string, empty if none)"]
     return "\n".join(lines)
 

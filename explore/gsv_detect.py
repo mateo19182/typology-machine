@@ -7,6 +7,7 @@ pano, the view yaw/pitch, the box in view pixels, and the absolute bearing to th
 Usage: uv run explore/gsv_detect.py coruna --prompt "store sign" [--current-only] [--batch 4] [--views 8]
 """
 import argparse
+import hashlib
 import json
 import math
 import queue
@@ -55,6 +56,7 @@ def main():
     ap.add_argument("--threshold", type=float, default=0.5)
     ap.add_argument("--batch", type=int, default=4)
     ap.add_argument("--workers", type=int, default=4)
+    ap.add_argument("--shard", default="0/1", help="k/n: this process takes the panos whose id hashes to k mod n")
     ap.add_argument("--min-side", type=int, default=32)
     ap.add_argument("--limit", type=int)
     ap.add_argument("--loop", action="store_true", help="keep polling panos.jsonl for new panos until none arrive for 10 min")
@@ -77,7 +79,9 @@ def main():
 
     def pending():
         rows = [json.loads(l) for l in open(base / "panos.jsonl")] if (base / "panos.jsonl").exists() else []
-        rows = [r for r in rows if r["id"] not in done and (base / "panos" / f"{r['id']}.jpg").exists()]
+        k, n = map(int, a.shard.split("/"))
+        rows = [r for r in rows if r["id"] not in done and (base / "panos" / f"{r['id']}.jpg").exists()
+                and int.from_bytes(hashlib.md5(r["id"].encode()).digest()[:4], "big") % n == k]
         if a.current_only:
             rows = [r for r in rows if r["is_current"]]
         return rows[: a.limit] if a.limit else rows
