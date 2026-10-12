@@ -186,6 +186,38 @@ def reuse_completed_views(out, config, selected_keys):
     return reused
 
 
+
+def runtime_config(out, config):
+    """Extend future views only, leaving the original run identity immutable."""
+    path = out / "additional_prompts.json"
+    if not path.exists():
+        return config
+    raw = path.read_bytes()
+    extension = json.loads(raw)
+    if extension.get("schema_version") != 1 or any(extension.get(k) != config[k] for k in ("model", "revision")):
+        raise ValueError("Additional prompts must pin the same model and revision")
+    prompts = extension.get("prompts")
+    if not isinstance(prompts, dict) or not prompts:
+        raise ValueError("Additional prompts must be a nonempty category mapping")
+    for category, values in prompts.items():
+        if not isinstance(category, str) or not category or any(c not in "abcdefghijklmnopqrstuvwxyz0123456789_" for c in category):
+            raise ValueError("Invalid additional category name")
+        if category in config["prompts"]:
+            raise ValueError("Additional prompts cannot replace existing categories")
+        if not isinstance(values, list) or not values or any(not isinstance(p, str) or not p.strip() for p in values) or len(set(values)) != len(values):
+            raise ValueError("Each additional category needs unique nonempty prompts")
+    return {**config, "prompts": {**config["prompts"], **prompts},
+            "additional_prompts_sha256": hashlib.sha256(raw).hexdigest()}
+
+
+def attempted_provenance(config):
+    # Includes categories producing zero boxes, distinguishing them from old
+    # views where a new category has never been attempted.
+    return {"attempted_categories": list(config["prompts"]),
+            "attempted_prompts": config["prompts"],
+            "additional_prompts_sha256": config.get("additional_prompts_sha256")}
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("city", nargs="?", default="coruna")
@@ -231,8 +263,10 @@ def main():
         selected = {f"{row['id']}_{face}" for row in select_panos(base / "lookaround.csv", a) for face in (1, 3)}
         reused = reuse_completed_views(out, config, selected)
     print(f"reused {reused} completed views from compatible prior runs", flush=True)
+    config = runtime_config(out, config)
     atomic_json(out / "execution.json", {"workers": a.workers, "started_at": time.time(),
-        "reused_prior_views": reused, "cached_text_embeddings": True, "prefetch_views_per_worker": 1,
+        "reused_prior_views": reused, "effective_prompts": config["prompts"],
+        "additional_prompts_sha256": config.get("additional_prompts_sha256"), "cached_text_embeddings": True, "prefetch_views_per_worker": 1,
         "assignment": "sha256(panorama id) modulo workers", "torch_threads_per_worker": a.torch_threads})
     if a.workers == 1:
         run_worker(base, a, out, config, 0)
@@ -285,14 +319,14 @@ def run_worker(base, a, out, config, worker_index):
     def stop(*_):
         nonlocal stopping
         stopping = True
-        print("Stopping after the current view is saved", flush=True)
+        # Signal handlers only set state: buffered stdout can be reentered.
 
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
     # Text prompts are constant across images. Retain the attention mask as well.
     text_cache = {}
     with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
-        for prompts in PROMPTS.values():
+        for prompts in config["prompts"].values():
             for prompt in prompts:
                 text = processor(text=prompt, return_tensors="pt").to("cuda")
                 text_cache[prompt] = (model.get_text_features(**text, return_dict=True), text.get("attention_mask"))
@@ -339,7 +373,7 @@ def run_worker(base, a, out, config, worker_index):
                     "crop": str(base / a.source / "store_sign" / row["crop"]),
                     "mask": str(base / a.source / "store_sign" / row["mask"])})
         w, h = image.size
-        for category, prompts in PROMPTS.items():
+        for category, prompts in config["prompts"].items():
             if category == "store_sign" and reuse:
                 continue
             for prompt_index, prompt in enumerate(prompts):
@@ -368,7 +402,7 @@ def run_worker(base, a, out, config, worker_index):
         atomic_json(case / "result.json", {"source": a.source, "view_id": key, "metadata": metadata,
             "source_path": str(source_path), "image_size": [w,h], "legacy_store_sign_reused": reuse,
             "encode_seconds": encode_seconds, "seconds": time.monotonic()-start,
-            "predictions": merge_candidates(predictions)})
+            "predictions": merge_candidates(predictions), **attempted_provenance(config)})
         del vision, inputs
         processed += 1
         print(f"worker {worker_index}: {processed} views; {key}: {len(predictions)} candidates; {(time.monotonic()-begin)/processed:.2f}s/view", flush=True)

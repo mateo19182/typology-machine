@@ -34,6 +34,7 @@ STYLES = {
     'door': ('Doors', '#6d9eeb'),
     'shutter': ('Shutters', '#51b9ae'),
     'person': ('People', '#f08545'),
+    'pet': ('Pets', '#b39b67'),
 }
 
 
@@ -113,14 +114,27 @@ def read_ocr(run):
 
 def export_locked(city_base, run, out, if_changed, extra_runs=()):
     inputs, prompts, group_sources = [], {}, []
-    # Supplemental runs add distinct layers; reject overlaps rather than silently
-    # double-counting observations or choosing one run's model configuration.
+    # Primary results take precedence when a supplemental run repeats an exact ID.
     for folder in (run, *extra_runs):
+        if any(data['run'].resolve() == folder.resolve() for data in inputs):
+            raise ValueError(f'Run supplied more than once: {folder}')
         config = json.loads((folder / 'config.json').read_text())
-        overlap = prompts.keys() & config['prompts'].keys()
-        if overlap:
-            raise ValueError(f'Categories appear in multiple runs: {sorted(overlap)}')
-        prompts.update(config['prompts'])
+        original_prompts = dict(config['prompts'])
+        extension_path = folder / 'additional_prompts.json'
+        extension_bytes = extension_path.read_bytes() if extension_path.exists() else b''
+        extension_sha = hashlib.sha256(extension_bytes).hexdigest()
+        if extension_bytes:
+            extension = json.loads(extension_bytes)
+            for key in ('model', 'revision'):
+                if extension.get(key) != config.get(key):
+                    raise ValueError(f'Additional prompts {key} does not match run configuration')
+            overlap = config['prompts'].keys() & extension['prompts'].keys()
+            if overlap:
+                raise ValueError(f'Additional prompts redefine categories: {sorted(overlap)}')
+            config['prompts'].update(extension['prompts'])
+        for category, category_prompts in config['prompts'].items():
+            prompts.setdefault(category, [])
+            prompts[category].extend(p for p in category_prompts if p not in prompts[category])
         # Freeze lists before reading; newly completed views enter the next snapshot.
         results = sorted((folder / 'views').glob('*/result.json'))
         ocr, ocr_sha = read_ocr(folder)
@@ -130,10 +144,11 @@ def export_locked(city_base, run, out, if_changed, extra_runs=()):
                 group_sources.append(source)
         stats = [(p.parent.name, p.stat().st_size, p.stat().st_mtime_ns) for p in results]
         inputs.append({'run': folder, 'config': config, 'results': results,
-                       'ocr': ocr, 'ocr_sha': ocr_sha, 'groups': groups, 'stats': stats})
-    signature = hashlib.sha256(json.dumps({'schema': 4, 'groups': group_sources, 'runs': [
+                       'ocr': ocr, 'ocr_sha': ocr_sha, 'groups': groups, 'stats': stats,
+                       'original_prompts': original_prompts, 'extension_sha': extension_sha})
+    signature = hashlib.sha256(json.dumps({'schema': 5, 'groups': group_sources, 'runs': [
         {'run': str(item['run'].resolve()), 'config': item['config'],
-         'results': item['stats'], 'ocr': item['ocr_sha']} for item in inputs
+         'results': item['stats'], 'ocr': item['ocr_sha'], 'additional_prompts': item['extension_sha']} for item in inputs
     ]}, sort_keys=True).encode()).hexdigest()
     config = inputs[0]['config']
     current = out / 'layers' / 'manifest.json'
@@ -149,6 +164,8 @@ def export_locked(city_base, run, out, if_changed, extra_runs=()):
     counts, flagged = Counter(), Counter()
     object_ids = {category: set() for category in prompts}
     fingerprint = hashlib.sha256()
+    seen_ids = {}
+    category_views = {category: set() for category in prompts}
     try:
         for stream in streams.values():
             stream.write('{"type":"FeatureCollection","features":[')
@@ -159,8 +176,18 @@ def export_locked(city_base, run, out, if_changed, extra_runs=()):
                 raw = path.read_bytes()
                 fingerprint.update(path.parent.name.encode() + b'\0' + raw)
                 result = json.loads(raw)
+                for category in result.get('attempted_categories', data['original_prompts']):
+                    if category in category_views:
+                        category_views[category].add((result['source'], result['view_id']))
                 for prediction in result['predictions']:
                     category = prediction['category_proposal']
+                    prediction_id = prediction['id']
+                    if prediction_id in seen_ids:
+                        if seen_ids[prediction_id] != category:
+                            raise ValueError(f'Prediction ID crosses categories: {prediction_id}')
+                        continue
+                    seen_ids[prediction_id] = category
+                    category_views[category].add((result['source'], result['view_id']))
                     item = feature(result, prediction, asset_url(prediction['crop'], city_base, out), folder.name)
                     group = groups.get(prediction['id'])
                     if group:
@@ -191,8 +218,10 @@ def export_locked(city_base, run, out, if_changed, extra_runs=()):
     finally:
         for stream in streams.values():
             stream.close()
+    category_runs = {category: [data for data in inputs if category in data['config']['prompts']]
+                     for category in prompts}
     manifest = {
-        'schema_version': 4, 'group_sources': group_sources, 'grouping': 'partial_duplicate_proposals', 'input_signature': signature,
+        'schema_version': 5, 'group_sources': group_sources, 'grouping': 'partial_duplicate_proposals', 'input_signature': signature,
         'published_at': datetime.now(timezone.utc).isoformat(),
         'latest_detection_at': datetime.fromtimestamp(max((x[2] for data in inputs for x in data['stats']), default=0) / 1e9, timezone.utc).isoformat(),
         'ocr_records': sum(len(data['ocr']) for data in inputs), 'refresh_interval_seconds': 900,
@@ -207,9 +236,12 @@ def export_locked(city_base, run, out, if_changed, extra_runs=()):
         'categories': [{'id': category, 'label': STYLES.get(category, (category, '#aaa'))[0],
                         'color': STYLES.get(category, (category, '#aaa'))[1], 'count': counts[category],
                         'same_view_duplicate_flags': flagged[category], 'object_count': len(object_ids[category]), 'prompts': category_prompts,
-                        'run_id': data['run'].name, 'completed_views': len(data['results']),
-                        'pilot': data['config'].get('experiment'),
-                        'url': f'layers/{snapshot}/{category}.geojson'} for data in inputs for category, category_prompts in data['config']['prompts'].items()],
+                        'run_id': category_runs[category][0]['run'].name,
+                        'run_ids': [data['run'].name for data in category_runs[category]],
+                        'completed_views': len(category_views[category]),
+                        'pilot': (category_runs[category][0]['config'].get('experiment')
+                                  if all(data['config'].get('experiment') for data in category_runs[category]) else None),
+                        'url': f'layers/{snapshot}/{category}.geojson'} for category, category_prompts in prompts.items()],
     }
     (destination / 'manifest.json').write_text(json.dumps(manifest, indent=2))
     temp = out / 'layers' / f'.manifest-{snapshot}.tmp'
@@ -224,7 +256,7 @@ def main():
     parser.add_argument('--run', required=True, type=Path)
     parser.add_argument('--out', type=Path)
     parser.add_argument('--extra-run', action='append', type=Path, default=[],
-                        help='Supplement with a run containing additional categories (repeatable)')
+                        help='Supplement with another run; repeated prediction IDs prefer the primary run (repeatable)')
     parser.add_argument('--if-changed', action='store_true', help='Skip publishing when detections and OCR are unchanged')
     parser.add_argument('--prune-hours', type=int, help='Retain at least 8 snapshots and all snapshots newer than this many hours')
     args = parser.parse_args()

@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Method · Typology Machine</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{color-scheme:dark;--bg:#0a0b0d;--fg:#d8d3c8;--dim:#99948a;--line:#26272c;--amber:#d79a3a;font-family:"IBM Plex Mono","SFMono-Regular",Menlo,monospace}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font-size:13px;line-height:1.65}header{padding:14px 16px;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;border-bottom:1px solid var(--line)}a{color:inherit}header a{text-decoration:none;letter-spacing:.08em}nav{display:flex;gap:12px}button{font:inherit;color:var(--dim);background:none;border:0;border-bottom:1px solid transparent;cursor:pointer;padding:4px}button[aria-pressed="true"]{color:var(--amber);border-color:var(--amber)}a:focus-visible,button:focus-visible{outline:1px solid var(--amber);outline-offset:3px}main{max-width:940px;margin:30px auto;padding:0 20px 45px}h1{font-size:22px;font-weight:400;margin:0 0 20px}table{border-collapse:collapse;width:100%}th,td{text-align:left;vertical-align:top;border-top:1px solid var(--line);padding:15px 0}th{width:155px;padding-right:20px;color:var(--amber);font-weight:400}td p{margin:0 0 10px}td p:last-child{margin:0}code{font:inherit;overflow-wrap:anywhere;color:var(--dim)}footer{margin-top:20px;color:var(--dim);font-size:11px}[hidden]{display:none!important}@media(max-width:560px){th,td{display:block;width:100%;padding:10px 0}td{border-top:0;padding-top:0;padding-bottom:18px}main{margin-top:22px;padding:0 16px 30px}}
+</style>
+</head>
+<body>
+<header><a id="back" href="index.html">← Typology Machine · Map</a><nav id="languages" aria-label="Language"><button type="button" data-language="en" lang="en" aria-label="Read in English" aria-pressed="true">EN</button><button type="button" data-language="es" lang="es" aria-label="Leer en español" aria-pressed="false">ES</button></nav></header>
+<main>
+<section lang="en" data-content="en">
+<h1>Method</h1>
+<table aria-label="Pipeline and map conventions">
+<tbody>
+<tr><th scope="row">Detection</th><td><p>SAM3, <code>JobHarvest/sam3</code> mirror. Pinned revision <code>90ab711c3b98c6d012c9ebf31f2b575b47b614bc</code>. Current Apple pass samples panoramas at 10 m spacing, faces 1 and 3.</p><p>17 text prompts cover 13 categories. Four GPU workers encode each image once, reuse cached prompt embeddings and run bfloat16 inference. Score threshold 0.5; minimum box side 32 px; crop padding 12%. Masks are saved at quarter resolution. The map displays rectangular crops.</p></td></tr>
+<tr><th scope="row">Categories</th><td><p>The SAM prompt assigns the proposed category. Current SAM layers use no additional classifier. InternDecision2B was evaluated on 96 crops; those labels are not applied to the map.</p><p>People and pets, using dog/cat prompts, joined the current run after 48,009 completed views. Earlier views await the recorded backfill. People on posters, occlusion and partial bodies can produce unwanted crops.</p></td></tr>
+<tr><th scope="row">Text</th><td>Partial OCR for shop signs and street-name plates only: CPU RapidOCR Latin PP-OCRv5, plus reused older Florence results. Text helps search; it does not decide the category.</td></tr>
+<tr><th scope="row">Duplicates</th><td><p>Shop policy v13: DINOv2 cosine ≥0.60, distance ≤100 m, same capture date, different panoramas. SIFT verification requires ≥20 inliers, ≥50% agreement and ≥10% coverage; RANSAC threshold 2.5 px. Every pair in a group must pass.</p><p>Graffiti/street-name grouping covers a 17-group pilot with additional scene-geometry checks. Coverage is partial. People and pets have no matching across images. Shop signs combine older Apple/Google representatives with new observations; exact source lineage avoids repeating those representatives. Nearby dots bundled for display are not duplicate groups.</p></td></tr>
+<tr><th scope="row">Location &amp; time</th><td><p>New observations use camera coordinates; older shop records may use triangulated positions. Capture date belongs to the source image. Older records can have month precision.</p><p>The year filter includes both endpoints; unknown dates have a separate toggle. Snapshot publication time is separate from capture time. Atomic map snapshots refresh every 15 minutes; the update control loads a new snapshot.</p></td></tr>
+</tbody></table>
+<footer>Method updated 12 October 2026.</footer>
+</section>
+<section lang="es" data-content="es" hidden>
+<h1>Método</h1>
+<table aria-label="Procesamiento y criterios del mapa">
+<tbody>
+<tr><th scope="row">Detección</th><td><p>SAM3, copia <code>JobHarvest/sam3</code>. Revisión fija <code>90ab711c3b98c6d012c9ebf31f2b575b47b614bc</code>. La pasada actual de Apple selecciona panoramas con una separación de 10 m y las caras 1 y 3.</p><p>17 instrucciones de texto cubren 13 categorías. Cuatro procesos GPU codifican cada imagen una vez, reutilizan las representaciones de texto y ejecutan la inferencia en bfloat16. Umbral 0,5; lado mínimo 32 px; margen del recorte 12 %. Máscaras guardadas a un cuarto de resolución. El mapa muestra recortes rectangulares.</p></td></tr>
+<tr><th scope="row">Categorías</th><td><p>La instrucción de SAM asigna la categoría propuesta. Las capas SAM actuales no usan un clasificador adicional. InternDecision2B se evaluó con 96 recortes; sus etiquetas no se aplican al mapa.</p><p>Personas y mascotas, con instrucciones para perros y gatos, se añadieron tras completar 48.009 vistas. Queda pendiente procesarlas en las vistas anteriores, registradas para ello. Las personas en carteles, las oclusiones y los cuerpos parciales pueden generar recortes no deseados.</p></td></tr>
+<tr><th scope="row">Texto</th><td>OCR parcial solo en rótulos comerciales y placas de calles: RapidOCR Latin PP-OCRv5 en CPU y resultados anteriores de Florence. El texto permite buscar; no determina la categoría.</td></tr>
+<tr><th scope="row">Duplicados</th><td><p>Criterio comercial v13: coseno DINOv2 ≥0,60, distancia ≤100 m, misma fecha y panoramas distintos. SIFT exige ≥20 correspondencias válidas, ≥50 % de acuerdo y ≥10 % de cobertura; umbral RANSAC de 2,5 px. Cada pareja del grupo debe cumplirlo.</p><p>Grafitis y placas de calles tienen un piloto de 17 grupos con comprobaciones geométricas del entorno. La cobertura es parcial. No se asocian personas ni mascotas entre imágenes. Rótulos combina representantes antiguos de Apple/Google y observaciones nuevas; la procedencia exacta evita repetir representantes. Agrupar puntos cercanos en pantalla no los convierte en duplicados.</p></td></tr>
+<tr><th scope="row">Lugar y fecha</th><td><p>Las observaciones nuevas usan coordenadas de la cámara; algunos rótulos antiguos tienen posiciones trianguladas. La fecha corresponde a la imagen original. Algunos registros antiguos solo precisan el mes.</p><p>El filtro de años incluye ambos extremos; las fechas desconocidas tienen un control aparte. La publicación del mapa y la captura de la imagen son fechas distintas. Las actualizaciones se comprueban cada 15 minutos; el botón de actualización permite cargarla.</p></td></tr>
+</tbody></table>
+<footer>Método actualizado el 12 de octubre de 2026.</footer>
+</section>
+</main>
+<script>
+function setLanguage(language){
+  const lang=language==='es'?'es':'en';
+  document.documentElement.lang=lang;
+  document.title=(lang==='es'?'Método':'Method')+' · Typology Machine';
+  document.querySelectorAll('[data-content]').forEach(section=>{section.hidden=section.dataset.content!==lang});
+  document.querySelectorAll('[data-language]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.language===lang)));
+  document.getElementById('back').textContent='← Typology Machine · '+(lang==='es'?'Mapa':'Map');
+  document.getElementById('languages').setAttribute('aria-label',lang==='es'?'Idioma':'Language');
+  try{localStorage.setItem('typology-language',lang)}catch{}
+}
+let savedLanguage;try{savedLanguage=localStorage.getItem('typology-language')}catch{}
+setLanguage(savedLanguage==='es'||savedLanguage==='en'?savedLanguage:(navigator.language||'').toLowerCase().startsWith('es')?'es':'en');
+document.querySelectorAll('[data-language]').forEach(button=>button.addEventListener('click',()=>setLanguage(button.dataset.language)));
+</script>
+</body>
+</html>

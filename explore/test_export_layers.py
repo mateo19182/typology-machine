@@ -128,9 +128,57 @@ class LayerExportTest(unittest.TestCase):
             self.assertNotEqual(updated_pilot['snapshot_id'], updated['snapshot_id'])
             self.assertEqual(updated_pilot['total_detections'], 4)
             published = (out / 'layers/manifest.json').read_bytes()
-            with self.assertRaisesRegex(ValueError, 'Categories appear in multiple runs'):
+            with self.assertRaisesRegex(ValueError, 'Run supplied more than once'):
                 export(base, main, out, extra_runs=[main])
             self.assertEqual((out / 'layers/manifest.json').read_bytes(), published)
+
+            # Production can add categories before any new result has completed.
+            extension = {'schema_version': 1, 'model': 'sam3', 'revision': None,
+                         'prompts': {'person': ['person'], 'pet': ['dog', 'cat']},
+                         'activated_at': '2026-10-12T20:00:00Z'}
+            (main / 'additional_prompts.json').write_text(json.dumps(extension))
+            enabled = export(base, main, out, if_changed=True, extra_runs=[people])
+            self.assertNotEqual(enabled['snapshot_id'], updated_pilot['snapshot_id'])
+            categories = {c['id']: c for c in enabled['categories']}
+            self.assertIsNone(categories['person']['pilot'])
+            self.assertEqual(categories['person']['count'], 2)
+            self.assertEqual(categories['pet']['count'], 0)
+            self.assertEqual(categories['pet']['completed_views'], 0)
+            self.assertEqual(categories['pet']['label'], 'Pets')
+            self.assertEqual(categories['person']['run_ids'], ['main', 'pilot'])
+
+            result_path = main / 'views/view0/result.json'
+            result = json.loads(result_path.read_text())
+            result['metadata']['date'] = '2019-06-01'
+            result['attempted_categories'] = ['graffiti', 'person', 'pet']
+            template = result['predictions'][0]
+            # Repeated ID is one observation; a different person at the same place
+            # survives even when the detector output geometry is identical.
+            result['predictions'].extend([
+                dict(template, id='person-0', category_proposal='person', prompt='person'),
+                dict(template, id='new-person', category_proposal='person', prompt='person'),
+                dict(template, id='pet-0', category_proposal='pet', prompt='dog'),
+            ])
+            result_path.write_text(json.dumps(result))
+            merged = export(base, main, out, if_changed=True, extra_runs=[people])
+            self.assertEqual(len(merged['categories']), 3)
+            categories = {c['id']: c for c in merged['categories']}
+            self.assertEqual({k: c['count'] for k, c in categories.items()},
+                             {'graffiti': 2, 'person': 3, 'pet': 1})
+            self.assertEqual(categories['person']['object_count'], 3)
+            self.assertEqual(categories['pet']['completed_views'], 1)
+            persons = {f['properties']['id']: f['properties'] for f in
+                       json.loads((out / categories['person']['url']).read_text())['features']}
+            self.assertEqual(persons['person-0']['raw'], '/proposal-context/apple/main/view0.jpg')
+            self.assertEqual(persons['person-0']['date'], '2019-06-01')
+            self.assertEqual(persons['person-1']['raw'], '/proposal-context/apple/pilot/view1.jpg')
+            self.assertEqual(persons['person-1']['date'], '2023-05-10')
+            self.assertTrue(all((out / row['crop'].lstrip('/')).exists() for row in persons.values()))
+            # Extension bytes themselves participate in the refresh signature.
+            extension['activated_at'] = '2026-10-12T20:01:00Z'
+            (main / 'additional_prompts.json').write_text(json.dumps(extension))
+            changed_extension = export(base, main, out, if_changed=True, extra_runs=[people])
+            self.assertNotEqual(changed_extension['snapshot_id'], merged['snapshot_id'])
 
 
 if __name__ == '__main__':

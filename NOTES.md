@@ -232,3 +232,12 @@ signs 307, traffic lights 260, benches 192, manholes 167. Viewer: `data/coruna/t
   a raw toggle and every viewpoint, combines OCR for search, uses representative
   camera coordinates. Initial shop layer76,383 observations ->68,682 items;
   5,655 actual multi-view groups present in this snapshot, plus17 newcategorygroups.
+
+## 2026-10-12: people/pets in ongoing SAM; backfill pending
+
+- User approved full-person crops, no extra classification. Main run `765844a02f75` now adds `person` and `pet` (`dog`, `cat`) after the 48,009-view checkpoint. Original config and all pre-transition predictions remain unchanged.
+- Runtime additions are pinned in `additional_prompts.json`; new results record attempted categories/prompts even for zero detections. Four workers continue the existing 10 m selection.
+- **Pending after the current pass:** backfill person/pet detection on pre-transition views. Inventory: `data/coruna/apple/multicategory/765844a02f75/person_pet_backfill.json`; pilot's 50 person-covered views are recorded separately. Do not rerun existing category detections, replace approved duplicate groups, or treat unattempted categories as absent. Backfill has not started.
+- User abandoned the independent street-text detector after review. Keep its artifacts; do not expand or publish its proposals.
+- Current map: one Shop signs layer combining old Apple/Google representatives with new observations using exact source-crop IDs and accepted groups. People and Pets are regular layers, without a classifier or cross-image person/pet matching.
+- UI: compact capture-year range, Select all/Clear all, ES/EN language preference, technical bilingual `method.html`. Removed explanatory panel subtitles.

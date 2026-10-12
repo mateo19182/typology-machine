@@ -7,10 +7,29 @@ import contextlib
 import io
 from pathlib import Path
 
-from multicategory_detect import atomic_json, legacy_results, merge_candidates, worker_for_panorama, reuse_completed_views, prefetch
+from multicategory_detect import atomic_json, legacy_results, merge_candidates, worker_for_panorama, reuse_completed_views, prefetch, runtime_config, attempted_provenance
 
 
 class MultiCategoryTests(unittest.TestCase):
+    def test_extension_preserves_base_config_and_records_zero_detection_attempts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            base = {"model": "sam", "revision": "pinned", "prompts": {"graffiti": ["graffiti"]}}
+            self.assertEqual(runtime_config(out, base), base)
+            extension = {"schema_version": 1, "model": "sam", "revision": "pinned", "prompts": {"person": ["person"], "pet": ["dog", "cat"]}}
+            atomic_json(out / "additional_prompts.json", extension)
+            effective = runtime_config(out, base)
+            self.assertEqual(base["prompts"], {"graffiti": ["graffiti"]})
+            self.assertEqual(effective, runtime_config(out, base))
+            record = {"predictions": [], **attempted_provenance(effective)}
+            self.assertEqual(record["attempted_categories"], ["graffiti", "person", "pet"])
+            self.assertEqual(record["attempted_prompts"]["pet"], ["dog", "cat"])
+            self.assertEqual(len(record["additional_prompts_sha256"]), 64)
+            for updates in ({"revision": "other"}, {"prompts": {"graffiti": ["mural"]}}, {"prompts": {"../bad": ["person"]}}, {"prompts": {"pet": []}}):
+                atomic_json(out / "additional_prompts.json", {**extension, **updates})
+                with self.assertRaises(ValueError):
+                    runtime_config(out, base)
+
     def test_prefetch_overlaps_one_item_and_preserves_order(self):
         loaded_second = threading.Event()
         calls = []

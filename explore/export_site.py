@@ -15,6 +15,7 @@ import pillow_heif
 import py360convert
 from PIL import Image
 from streetlevel import lookaround
+from map_groups import load_groups
 
 pillow_heif.register_heif_opener()
 
@@ -91,6 +92,7 @@ def main():
             continue
         rows = {r["id"]: r for r in map(json.loads, open(base / "instances.jsonl"))}
         groups = {g["sign"]: g for g in map(json.loads, open(base / "groups.jsonl"))}
+        display_groups = load_groups(base.parents[1], "legacy-export", source)[0]
         pos = [p for p in map(json.loads, open(base / "sign_positions.jsonl")) if p["n_rays"] >= a.min_rays]
         loc = {r["id"]: r for r in map(json.loads, open(base / "location.jsonl"))} if (base / "location.jsonl").exists() else {}
         tags = {t["id"]: t for t in map(json.loads, open(base / "tags.jsonl"))} if (base / "tags.jsonl").exists() else {}
@@ -126,17 +128,23 @@ def main():
             l = loc.get(r["id"], {})
             W, H = r["face_size"] if source == "apple" else r["view_size"]
             x0, y0, x1, y1 = r["box"]
-            o = {"id": sid, "src": source[0], "s": r["score"], "d": r["date"][:7], "seen": len(groups[p["sign"]]["members"]),
+            o = {"id": sid, "source_crop_id": f"legacy:{source}:{r['id']}", "src": source[0], "s": r["score"], "d": r["date"][:7], "seen": len(groups[p["sign"]]["members"]),
                  "la": round(p["lat"], 6), "lo": round(p["lon"], 6), "hm": p["height_m"], "w": wh[0], "h": wh[1],
                  "st": l.get("street"), "ba": l.get("barrio"), "u": source_link(r, source),
                  "bx": [round(x0 / W, 4), round(y0 / H, 4), round(x1 / W, 4), round(y1 / H, 4)],
                  "ctx": (out / "ctx" / f"{sid}.jpg").exists()}
+            display_group = display_groups.get(o["source_crop_id"])
+            if display_group:
+                o.update(duplicate_group=display_group["duplicate_group"], group_rep=display_group["group_rep"])
             if t:
                 o.update(k=t.get("kind"), b=t.get("business"), t=t.get("text"))
             data.append(o)
     meta = {"city": "A Coruña", "n": len(data), "by_source": counts, "dates": sorted({d["d"] for d in data})}
     json.dump({"meta": meta, "signs": data}, open(out / "data.json", "w"), ensure_ascii=False, separators=(",", ":"))
-    shutil.copy(ROOT / "site" / "index.html", out / "index.html")
+    for name in ("index.html", "method.html"):
+        page = ROOT / "site" / name
+        if page.exists():
+            shutil.copy(page, out / name)
     print(len(data), "signs ->", out, meta)
 
 
