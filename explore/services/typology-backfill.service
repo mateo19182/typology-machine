@@ -1,0 +1,10 @@
+[Unit]
+Description=People and pets backfill after the Apple category pass
+[Service]
+Type=oneshot
+WorkingDirectory=/home/mateo/projects/typology-machine
+ExecStart=/home/mateo/projects/typology-machine/.venv/bin/python -u explore/backfill_people_pets.py
+Environment=OPENBLAS_NUM_THREADS=1
+Nice=10
+TimeoutStartSec=infinity
+TimeoutStopSec=120

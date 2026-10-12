@@ -80,7 +80,25 @@ def legacy_results(base, source):
     return done, rows
 
 
-def views(base, a):
+def google_rows(base, a):
+    manifest = getattr(a, "pano_manifest", None)
+    if manifest:
+        value = json.loads(Path(manifest).read_text())
+        if value.get("schema_version") != 1 or value.get("source") != "gsv":
+            raise ValueError("Invalid Google panorama manifest")
+        rows = [entry["metadata"] for entry in value["panoramas"]]
+    else:
+        rows = [json.loads(l) for l in (base / "gsv/panos.jsonl").open()]
+    rows = [r for r in rows if r.get("is_current")]
+    if a.year:
+        rows = [r for r in rows if (r.get("date") or "").startswith(a.year)]
+    if a.bbox:
+        west, south, east, north = map(float, a.bbox.split(","))
+        rows = [r for r in rows if west <= float(r["lon"]) <= east and south <= float(r["lat"]) <= north]
+    return rows[:a.limit] if a.limit else rows
+
+
+def views(base, a, out=None, worker_index=None):
     if a.source == "apple":
         fetcher = Faces(1)
         try:
@@ -93,16 +111,21 @@ def views(base, a):
             fetcher.ex.shutdown(wait=False)
     else:
         from gsv_detect import cut_views
-        rows = [json.loads(l) for l in (base / "gsv/panos.jsonl").open()]
-        rows = [r for r in rows if r.get("is_current")]
-        if a.limit:
-            rows = rows[:a.limit]
-        for row in rows:
-            path = base / "gsv/panos" / f"{row['id']}.jpg"
-            if not path.exists():
+        for row in google_rows(base, a):
+            if worker_index is not None and worker_for_panorama(row["id"], a.workers) != worker_index:
                 continue
+            yaws = [yaw for yaw in range(0, 360, 45)
+                    if out is None or not (out / "views" / f"{row['id']}_{yaw}" / "result.json").exists()]
+            if not yaws:
+                continue
+            path = base / "gsv/panos" / f"{row['id']}.jpg"
+            deadline = time.monotonic() + getattr(a, "input_wait_seconds", 0)
+            while not path.exists() and time.monotonic() < deadline:
+                time.sleep(1)
+            if not path.exists():
+                raise FileNotFoundError(f"Selected Google panorama missing: {path}")
             with Image.open(path) as im:
-                for yaw, view in cut_views(im.convert("RGB"), 8):
+                for yaw, view in cut_views(im.convert("RGB"), 8, yaws=yaws):
                     yield f"{row['id']}_{int(yaw)}", {**row, "view_yaw": yaw, "view_pitch": 8}, path, lambda v=view: (v, None)
 
 
@@ -122,7 +145,7 @@ def prefetch(items, load):
 
 def loaded_views(base, a, out, worker_index, should_stop):
     def pending_views():
-        for entry in views(base, a):
+        for entry in views(base, a, out, worker_index):
             if should_stop():
                 break
             key, metadata, source_path, fetch = entry
@@ -147,7 +170,20 @@ def loaded_views(base, a, out, worker_index, should_stop):
                 source_path.write_bytes(raw)
         return key, metadata, source_path, image
 
-    yield from prefetch(pending_views(), load)
+    if a.source == "gsv":
+        # Projection happens while advancing the iterator, so advance it in the
+        # loader thread too. Otherwise the GPU waits for every panorama's views.
+        entries = iter(pending_views())
+        def next_loaded():
+            entry = next(entries, None)
+            return load(entry) if entry is not None else None
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            pending = pool.submit(next_loaded)
+            while (value := pending.result()) is not None:
+                pending = pool.submit(next_loaded)
+                yield value
+    else:
+        yield from prefetch(pending_views(), load)
 
 
 def tensor_tree(value, fn):
@@ -232,7 +268,15 @@ def main():
     ap.add_argument("--workers", type=int, default=1, help="concurrent GPU processes with disjoint panorama assignments")
     ap.add_argument("--resume-run", type=Path, help="resume an existing run using its pinned model revision; repeat its selection flags")
     ap.add_argument("--max-new-views", type=int, help="stop each worker after this many new views, for throughput checks")
+    ap.add_argument("--pano-manifest", type=Path, help="frozen Google source inventory; also save portable asset paths")
+    ap.add_argument("--input-wait-seconds", type=int, default=0, help="wait briefly for staged Google inputs")
+    ap.add_argument("--model-revision", help="pin the model commit for a new run")
+    ap.add_argument("--no-legacy-reuse", action="store_true", help="detect shop signs afresh without external legacy assets")
+    ap.add_argument("--include-people-pets", action="store_true", help="include person, dog and cat in a new run configuration")
+    ap.add_argument("--prepare-only", action="store_true", help="write the pinned run configuration without loading a GPU model")
     a = ap.parse_args()
+    if a.pano_manifest and a.source != "gsv":
+        ap.error("--pano-manifest is only supported for Google")
     if a.workers < 1 or a.torch_threads < 1 or (a.max_new_views is not None and a.max_new_views < 1):
         ap.error("workers and max-new-views must be positive")
     from huggingface_hub import HfApi
@@ -240,13 +284,21 @@ def main():
 
     base = (Path("data") / a.city).resolve()
     recorded = json.loads((a.resume_run / "config.json").read_text()) if a.resume_run else None
-    revision = recorded["revision"] if recorded else HfApi().model_info(MODEL).sha
+    revision = recorded["revision"] if recorded else (a.model_revision or HfApi().model_info(MODEL).sha)
+    if recorded and a.model_revision and a.model_revision != revision:
+        ap.error("--model-revision differs from the recorded model")
     config = {"model": MODEL, "revision": revision, "transformers": transformers.__version__,
               "prompts": PROMPTS, "threshold": a.threshold, "mask_threshold": .5,
               "mask_downsample": DOWN, "padding": PAD, "min_side": 32,
               "source": a.source, "year": a.year, "bbox": a.bbox, "thin": a.thin,
               "gsv_projection": {"fov": [70, 55], "size": [1600, 2048], "pitch": 8, "views": 8},
               "schema_version": 1, "legacy_store_sign": "reuse completed .5 threshold detections"}
+    if a.pano_manifest:
+        config.update(pano_manifest_sha256=hashlib.sha256(a.pano_manifest.read_bytes()).hexdigest(), portable_paths=True)
+    if a.include_people_pets:
+        config["prompts"] = {**PROMPTS, "person": ["person"], "pet": ["dog", "cat"]}
+    if a.no_legacy_reuse:
+        config["legacy_store_sign"] = "disabled"
     run_id = hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()[:12]
     out = base / a.source / "multicategory" / run_id
     if recorded is not None and (config != recorded or a.resume_run.resolve() != out):
@@ -257,6 +309,9 @@ def main():
     lock = (out / ".lock").open("w")
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     atomic_json(out / "config.json", config)
+    if a.prepare_only:
+        print(f"prepared {len(config['prompts'])} categories; model revision {revision}", flush=True)
+        return
     print(f"output: {out}", flush=True)
     reused = 0
     if a.source == "apple":
@@ -309,8 +364,14 @@ def main():
 def run_worker(base, a, out, config, worker_index):
     from transformers import Sam3Model, Sam3Processor
     torch.set_num_threads(getattr(a, "torch_threads", 2))
+    if a.source == "gsv":
+        try:
+            import cv2
+            cv2.setNumThreads(1)  # Multiple GPU workers share the assigned CPUs.
+        except ImportError:
+            pass
     revision = config["revision"]
-    done, legacy = legacy_results(base, a.source)
+    done, legacy = (set(), {}) if config["legacy_store_sign"] == "disabled" else legacy_results(base, a.source)
     processor = Sam3Processor.from_pretrained(MODEL, revision=revision)
     model = Sam3Model.from_pretrained(MODEL, revision=revision, dtype=torch.bfloat16).cuda().eval()
     print(f"worker {worker_index}: attention backend {model.config._attn_implementation}", flush=True)
@@ -395,12 +456,17 @@ def run_worker(base, a, out, config, worker_index):
                     image.crop(crop_box).save(case / f"{name}.jpg", quality=90)
                     Image.fromarray(mask.cpu().numpy().astype(np.uint8)*255).crop(
                         tuple(int(v/DOWN) for v in crop_box)).save(case / f"{name}.png")
+                    asset_root = Path(__file__).resolve().parent.parent
+                    crop_path, mask_path = case / f"{name}.jpg", case / f"{name}.png"
+                    if config.get("portable_paths"):
+                        crop_path, mask_path = crop_path.relative_to(asset_root), mask_path.relative_to(asset_root)
                     predictions.append({"id": f"{a.source}:{key}:{name}", "category_proposal": category,
                         "prompt": prompt, "score": float(score), "box": [x0,y0,x1,y1], "crop_box": crop_box,
-                        "crop": str(case / f"{name}.jpg"), "mask": str(case / f"{name}.png")})
+                        "crop": str(crop_path), "mask": str(mask_path)})
                 del outputs, result
+        recorded_source = source_path.relative_to(Path(__file__).resolve().parent.parent) if config.get("portable_paths") else source_path
         atomic_json(case / "result.json", {"source": a.source, "view_id": key, "metadata": metadata,
-            "source_path": str(source_path), "image_size": [w,h], "legacy_store_sign_reused": reuse,
+            "source_path": str(recorded_source), "image_size": [w,h], "legacy_store_sign_reused": reuse,
             "encode_seconds": encode_seconds, "seconds": time.monotonic()-start,
             "predictions": merge_candidates(predictions), **attempted_provenance(config)})
         del vision, inputs

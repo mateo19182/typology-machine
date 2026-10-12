@@ -495,3 +495,100 @@ The map now has one **Shop signs / Rótulos** layer. Legacy records retain their
 People and Pets are now part of the ongoing main SAM pass, using `person`, `dog`, and `cat`. The original run ID/configuration remains unchanged; `additional_prompts.json` pins the extension to the same model revision. Each newly saved result records all attempted categories and the extension hash. Existing completed views are skipped, not rewritten. `person_pet_backfill.json` records 48,009 pre-transition views and separately records person-pilot coverage; backfill is pending. Current categories are semantic SAM proposals, with no second classifier in the main detection/map path. The earlier classifier evaluation remains separate.
 
 Supplemental map runs can now share categories. Exact repeated prediction IDs prefer the primary run; other detections are retained. This keeps the completed person pilot alongside new main-run people while preserving correct source-image links. The scheduled map refresh includes both runs. Main SAM restarted with four workers and `KillMode=mixed`; its parent forwards graceful stop signals, and workers complete their current view before exiting.
+
+### Google GPU rental preparation
+
+`explore/gpu_run/prepare.py` freezes the downloaded current Google panoramas into
+`data/coruna/gpu_google_current/`. The first inventory contains 4,408 panoramas,
+35,264 perspective views and 21.7 GB of source JPEGs. It pins the Apple model revision
+and all 13 categories from the start, including people/pets. Source images have
+SHA256 checksums; generated asset paths are relative to the project for transfer
+back to the local map. The bundle uses hard links to avoid a second image copy.
+
+See [GPU run instructions](explore/gpu_run/README.md) for bootstrap, preflight,
+eight-view smoke inference and a resumable, time-limited full run. Local preparation
+checks and remote smoke inference passed. The on demand Vast RTX 3090 is
+$0.205185/hour including 100 GB storage. The remote benchmark measured 0.86,
+1.25 and 1.30 views/second with one, two and four workers respectively; four
+workers were selected. Benchmark outputs count toward the frozen run.
+
+The host fetches the frozen panoramas directly and accepts only exact SHA256
+matches. `explore/vast_watch.py` uploads cached originals for exceptions, copies
+results every two minutes, and verifies the final copy before deleting the rental.
+It also ends a run with no completed views for 15 minutes. An independent
+`typology-vast-hard-stop.timer` stops compute at the nine hour rental deadline;
+if retrieval fails, remote storage is retained for recovery and remains billable.
+State is in `data/coruna/vast_run.json`; local logs are in `data/coruna/vast_logs/`.
+The Vast credential and dedicated SSH key stay outside the project and transfer bundle.
+
+`typology-google-fetch.service` runs `gsv_fetch.py coruna --thin 0 --workers 4
+--min-free-gb 60` to resume all indexed current Google panoramas in parallel.
+Downloads use a process lock and atomic JPEG replacement, stop gracefully, and
+pause before free disk drops below 60 GiB. The first GPU inventory stays frozen;
+later downloads need a separate inventory/run. Historical expansion is not enabled.
+
+### Map navigation and downloads
+
+The map has a thumbnail panel for the current area. Click a numbered point to
+browse its objects, or a thumbnail to inspect crops and viewpoints while keeping
+the map visible. Share view saves the map position, filters and selected object in
+the URL. Browser Back restores previous selections. Street and satellite basemaps
+are available from the map control.
+
+Filter by category, source, capture year, text and barrio. Barrio membership uses
+the municipal **Barrios / AA VV** polygons at the record's displayed coordinates.
+For SAM observations these are camera coordinates, so an object across a barrio
+border can be assigned to the camera's barrio. Points outside all polygons remain
+unassigned. The council's names are retained, including port and industrial areas.
+Refresh the checked-in boundary snapshot with `uv run explore/fetch_barrios.py`.
+Attribution and the source URL are saved inside `site/barrios.geojson`.
+
+Download selection exports CSV, GeoJSON or JSONL. The duplicate-group toggle
+selects object-group records or individual observations. Group records include
+member IDs and the retained observations. Category, source, date and barrio filters
+apply before grouping; text searches the retained group views. Only this map area
+restricts the export and wall to the displayed representative positions. Clicking
+a map point narrows the thumbnail panel only; downloads still use the filters.
+
+GeoJSON includes an export manifest. CSV and JSONL have a separate Manifest
+download with the filters, snapshot, model information, boundary source and counts.
+CSV nested fields contain JSON; spreadsheet formula prefixes in strings are
+escaped. Image URLs refer to existing viewer assets; images are not bundled, and
+these exports do not grant rights to provider content.
+
+The frontend is `site/index.html` plus `site/app.js` and `site/barrios.geojson`.
+`export_site.py` copies all three along with the method page.
+
+### Queued run follow-up, October 12
+
+`typology-followup.timer` checks progress every five minutes. Read current counts
+with `.venv/bin/python explore/pipeline_followup.py`; the timer also saves
+`data/coruna/pipeline_status.json`. Its local queue is `data/coruna/followup_plan.json`.
+The unit templates are under `explore/services/`.
+
+The people/pets backfill is prepared as Apple run `91bd4ea5ae4e`. All 48,009
+frozen pre-transition views have their original images locally. The follow-up
+starts `typology-backfill.service` only after the primary Apple service exits
+successfully and all 71,752 views are present, with more than 25 GiB free.
+It runs one GPU worker with only person/dog/cat prompts, preserving original
+results and approved duplicate groups. Outputs resume by completed view and
+enter the normal map refresh. The 50-view person pilot can overlap this backfill;
+exports retain one record per exact observation ID. A failed or incomplete main
+pass leaves the backfill waiting for inspection. A failed backfill needs an
+explicit service restart after its cause is fixed.
+
+Google run `9d984d64aa7e` enters map refresh only after the rental watcher finishes
+its final checksum copy, validates assets, and records rental destruction. The
+follow-up checks local assets and final count again, then installs a refresh
+service override. A stopped rental is left for recovery, never treated as a
+successful import. If the bounded run ends partially complete, verified results
+can still publish; inspect completed versus planned views in the status output.
+
+`typology-dedupe-followup.service` checks a frozen snapshot of current Apple shop
+signs, graffiti, and street-name proposals. It samples up to 1,500 observations
+per category near the existing review center, using two CPU workers, 80% local
+feature agreement, 35% crop coverage, and background-scene alignment. This is a
+bounded expansion, not citywide deduplication. It writes separate proposals under
+`apple/multicategory_dedupe/followup_20261012` and builds
+`comparison_share/multicategory-followup.html` when complete. Existing approved
+map groups remain selected. People and pets are excluded from identity matching.

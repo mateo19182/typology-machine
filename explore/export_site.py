@@ -141,7 +141,7 @@ def main():
             data.append(o)
     meta = {"city": "A Coruña", "n": len(data), "by_source": counts, "dates": sorted({d["d"] for d in data})}
     json.dump({"meta": meta, "signs": data}, open(out / "data.json", "w"), ensure_ascii=False, separators=(",", ":"))
-    for name in ("index.html", "method.html"):
+    for name in ("index.html", "method.html", "app.js", "barrios.geojson", "favicon.svg"):
         page = ROOT / "site" / name
         if page.exists():
             shutil.copy(page, out / name)

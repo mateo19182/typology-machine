@@ -1,0 +1,7 @@
+[Unit]
+Description=Check Typology run progress every five minutes
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=5min
+[Install]
+WantedBy=timers.target

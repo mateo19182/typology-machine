@@ -12,6 +12,10 @@ import argparse
 import csv
 import json
 import math
+import os
+import shutil
+import signal
+import fcntl
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -36,6 +40,8 @@ requests.Session.get = lambda self, *a, **kw: _sget(self, *a, **{"timeout": 30, 
 
 
 def thin(rows, d):
+    if not d:
+        return rows
     seen, out = set(), []
     for r in rows:
         k = (round(float(r["lat"]) * 111320 / d), round(float(r["lon"]) * 111320 * math.cos(math.radians(float(r["lat"]))) / d))
@@ -54,10 +60,13 @@ def main():
     ap.add_argument("--history", action="store_true")
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--limit", type=int)
+    ap.add_argument("--min-free-gb", type=float, default=40, help="stop before free disk drops below this reserve")
     a = ap.parse_args()
     data = Path("data") / a.city
     out = data / "gsv"
     (out / "panos").mkdir(parents=True, exist_ok=True)
+    process_lock = (out / '.fetch.lock').open('w')
+    fcntl.flock(process_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     log_path = out / "panos.jsonl"
     done = {json.loads(l)["id"] for l in open(log_path)} if log_path.exists() else set()
 
@@ -68,9 +77,16 @@ def main():
     rows = thin(rows, a.thin)
     if a.limit:
         rows = rows[: a.limit]
+    if not a.history:
+        rows = [r for r in rows if r['id'] not in done]
     print(f"{len(rows)} current panos selected, {len(done)} already fetched", flush=True)
 
     lock = threading.Lock()
+    stopping = threading.Event()
+    def stop(*_):
+        stopping.set()
+    signal.signal(signal.SIGTERM, stop)
+    signal.signal(signal.SIGINT, stop)
     local = threading.local()
 
     def session():
@@ -85,10 +101,18 @@ def main():
         if pano.id in done:
             return 0
         for _ in range(3):
+            if stopping.is_set():
+                return 0
+            if shutil.disk_usage(out).free < a.min_free_gb * 1024**3:
+                stopping.set()
+                print(f"Stopping download: keeping {a.min_free_gb:g} GiB free", flush=True)
+                return 0
             try:
                 if not dst.exists():
                     im = sv.get_panorama(pano, zoom=a.zoom)
-                    im.save(dst, quality=88)
+                    temporary = dst.with_suffix('.partial.jpg')
+                    im.save(temporary, quality=88)
+                    os.replace(temporary, dst)
                 rec = {"id": pano.id, "lat": pano.lat, "lon": pano.lon, "heading": round(math.degrees(pano.heading), 3) if pano.heading is not None else None,
                        "date": str(pano.date)[:7] if pano.date else None, "spot": spot, "is_current": is_current,
                        "size": [pano.image_sizes[-1].x, pano.image_sizes[-1].y] if pano.image_sizes else None}
@@ -103,6 +127,8 @@ def main():
         return 0
 
     def spot(row):
+        if stopping.is_set():
+            return 0
         n = 0
         for _ in range(3):
             try:

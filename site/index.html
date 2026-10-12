@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Typology Machine</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
@@ -80,6 +81,24 @@ footer { padding: 28px 16px; color: var(--dim); display: flex; flex-wrap: wrap; 
 #map-status { position: absolute; bottom: 24px; left: 12px; z-index: 700; padding: 5px 8px; background: #101216db; color: #ccc6bb; font-size: 10px; pointer-events: none; max-width: calc(100vw - 24px); }
 body[data-view="wall"] #map-status { display: none; }body[data-view="wall"] .object-layers { flex: none; position: relative; top: auto; right: auto; width: auto; margin: 10px; max-height: none; }body[data-view="wall"] #layer-options { display: grid; grid-template-columns: repeat(auto-fit,minmax(245px,1fr)); }
 @media(max-width:600px){ header .mast { white-space:normal; font-size:10px; letter-spacing:.1em; } .object-layers { top: 90px; right: 8px; width: 250px; max-height: 45dvh; }.detail .top { flex-wrap: wrap; gap: 8px; }.detail .arrows { gap: 12px; flex-wrap: wrap; }.detail .pic img { max-height: 52vh; }.cluster-controls { font-size: 10px; } }
+.layer-search select,.downloads select { width:100%; background:var(--bg); color:var(--fg); border:1px solid #444; border-radius:4px; padding:7px; font:inherit; }
+.layer-search .inline-control { display:flex; gap:8px; align-items:center; }.inline-control input { width:auto; }
+.downloads { display:grid; grid-template-columns:1fr 1fr; gap:8px; }.downloads label,.downloads select,.downloads span { grid-column:1/-1; }.downloads span { color:#aaa59b; font-size:10px; }
+.downloads button,.map-results button { font:inherit; color:var(--fg); background:var(--tile); border:1px solid #444; border-radius:4px; padding:6px 8px; cursor:pointer; }button:disabled { opacity:.45; cursor:default; }
+select:focus-visible,input:focus-visible,button:focus-visible { outline:2px solid var(--amber); outline-offset:2px; }
+.map-results { position:absolute; left:12px; bottom:45px; z-index:750; width:min(355px,calc(100vw - 335px)); max-height:40dvh; overflow:auto; border:1px solid #37383c; border-radius:8px; background:#0f1114f5; }
+.results-heading { display:flex; align-items:center; gap:8px; padding:10px; position:sticky; top:0; background:#0f1114; z-index:1; }.results-heading span { flex:1; }
+.map-thumbnails { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:3px; padding:3px; }.map-thumbnails .tile { border-bottom:2px solid; }.map-thumbnails .tile[aria-pressed="true"] { outline:2px solid var(--amber); outline-offset:-2px; background:#30281c; }
+.tile .view-count { position:absolute; right:4px; bottom:4px; background:#111d; color:#ddd; padding:1px 4px; font:10px var(--mono); }
+#results-more { margin:8px; }#results-empty { margin:10px; color:#aaa59b; }#results-empty:empty { display:none; }
+.map-results.collapsed #map-thumbnails,.map-results.collapsed #results-more,.map-results.collapsed #results-empty { display:none; }
+body[data-view="wall"] .map-results { display:none; }
+body[data-view="map"] .detail { inset:76px auto auto 12px; width:min(440px,calc(100vw - 340px)); max-height:calc(100dvh - 125px); border:1px solid #555; border-radius:8px; box-shadow:0 8px 40px #0008; background:#101216fa; padding:12px; }
+body[data-view="map"] .detail[open] { display:flex; flex-direction:column; gap:8px; }
+body[data-view="map"] .detail .top { flex-wrap:wrap; gap:8px; }body[data-view="map"] .detail .pic img { width:auto!important; max-width:100%; max-height:40dvh; }body[data-view="map"] .detail figure { min-height:100px; }
+body[data-view="map"] .detail .info { font-size:10px; }.detail .arrows { flex-wrap:wrap; }
+#action-status { position:fixed; bottom:12px; left:50%; transform:translateX(-50%); z-index:2500; background:var(--tile); padding:8px 12px; border:1px solid #555; border-radius:5px; }#action-status:empty { display:none; }
+@media(max-width:800px){.map-results { left:8px; bottom:40px; width:calc(100vw - 16px); max-height:25dvh; }.map-thumbnails { grid-template-columns:repeat(auto-fill,minmax(85px,1fr)); }.object-layers { max-height:48dvh; }body[data-view="map"] .detail { inset:auto 8px 35px; width:auto; max-height:65dvh; }body[data-view="map"] .detail .pic img { max-height:30dvh; }.results-heading { padding:7px; }body[data-view="map"] .detail .info .t { font-size:13px; }}
 </style>
 </head>
 <body data-view="map">
@@ -89,7 +108,7 @@ body[data-view="wall"] #map-status { display: none; }body[data-view="wall"] .obj
   <nav aria-label="View">
     <button id="v-map" aria-pressed="true">Map</button>
     <button id="v-wall" aria-pressed="false">Wall</button>
-    <button id="shuffle">Shuffle</button><a href="method.html">Method</a><button id="language" aria-label="Change language">ES</button>
+    <button id="shuffle">Shuffle</button><button id="share">Share view</button><a href="method.html">Method</a><button id="language" aria-label="Change language">ES</button>
   </nav>
 </header>
 <div class="cluster-controls" id="cluster-controls" hidden>
@@ -101,13 +120,31 @@ body[data-view="wall"] #map-status { display: none; }body[data-view="wall"] .obj
 <details class="object-layers" id="object-layers" open>
   <summary id="layer-summary">Object layers</summary>
   <label class="group-control" style="display:block;padding:0 14px 12px"><input id="group-duplicates" type="checkbox" checked> Group duplicate observations</label><div class="layer-search"><input id="object-search" aria-label="Search text" type="search" placeholder="Street or shop name…"><button id="focus-results">Show results on map</button></div>
+  <div class="layer-search">
+    <label for="barrio-filter">Barrio</label><select id="barrio-filter" disabled><option value="">All barrios</option></select>
+    <span id="barrio-status" role="status"></span>
+    <label for="source-filter">Image source</label><select id="source-filter"><option value="">Both sources</option><option value="apple">Apple Look Around</option><option value="gsv">Google Street View</option></select>
+    <label class="inline-control"><input id="area-filter" type="checkbox"> Only this map area</label>
+    <button id="reset-filters">Reset filters</button>
+  </div>
   <fieldset class="capture-filter"><legend>Capture year</legend><div class="year-values"><output id="year-from-value" for="year-from"></output><output id="year-to-value" for="year-to"></output></div><div class="year-slider"><input id="year-from" type="range" aria-label="Earliest capture year" step="1"><input id="year-to" type="range" aria-label="Latest capture year" step="1"></div><label><input id="date-unknown" type="checkbox" checked> Include unknown dates</label></fieldset>
   <div class="snapshot-update"><button id="snapshot-update" hidden>New data available · Update</button><span id="update-status" role="status"></span></div>
   <div class="layer-heading"><button id="layers-all">Select all</button><button id="layers-none">Clear all</button></div>
   <div id="layer-options"></div>
   <p id="layer-error" role="status"></p>
+  <fieldset class="capture-filter downloads"><legend>Download selection</legend>
+    <label for="download-format">Format</label><select id="download-format"><option value="csv">CSV</option><option value="geojson">GeoJSON</option><option value="jsonl">JSONL</option></select>
+    <button id="download-data" disabled>Download data</button><button id="download-manifest" disabled>Manifest</button>
+    <span id="download-summary" role="status"></span>
+  </fieldset>
 </details>
 <div id="map"></div><div id="map-status" hidden></div>
+<section id="map-results" class="map-results" aria-label="Objects in map area">
+  <div class="results-heading"><span id="results-title">In this area</span><button id="results-clear" hidden>Back to area</button><button id="results-toggle" aria-expanded="true">Hide</button></div>
+  <div id="map-thumbnails" class="map-thumbnails"></div>
+  <button id="results-more" hidden>Show more</button><p id="results-empty" role="status"></p>
+</section>
+<div id="action-status" role="status"></div>
 <main class="wall" id="wall" aria-label="Objects"></main>
 <div class="more" id="more"></div>
 
@@ -139,231 +176,6 @@ body[data-view="wall"] #map-status { display: none; }body[data-view="wall"] .obj
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script>
-(async function () {
-  let language='en';
-  try{language=localStorage.getItem('typology-language')||(navigator.language.startsWith('es')?'es':'en');}catch(error){language=navigator.language.startsWith('es')?'es':'en';}
-  const translations={
-    'Map':'Mapa','Wall':'Galería','Shuffle':'Mezclar','Method':'Método','Object layers':'Capas','Group duplicate observations':'Agrupar observaciones duplicadas','Search text':'Buscar texto','Street or shop name…':'Calle o comercio…','Show results on map':'Ver resultados en el mapa','Capture year':'Año de captura','Include unknown dates':'Incluir fechas desconocidas','Select all':'Seleccionar todo','Clear all':'Limpiar todo','Group':'Grupo','All signs':'Todos los rótulos','Not clustered':'Sin agrupar','Cluster colors':'Colores por grupo',
-    'Shop signs':'Rótulos comerciales','Street names':'Nombres de calles','Street name plates':'Placas de calles','Graffiti':'Grafitis','Traffic signs':'Señales de tráfico','Street lights':'Farolas','Bins':'Papeleras','Benches':'Bancos','Manhole covers':'Tapas de registro','Electrical cabinets':'Armarios eléctricos','Junction boxes':'Cajas de conexiones','Doors':'Puertas','Shutters':'Persianas','People':'Personas','Pets':'Mascotas','pilot':'prueba',
-    'full image':'imagen completa','show crop':'ver recorte','← prev':'← anterior','next →':'siguiente →','close ✕':'cerrar ✕','map':'mapa','Objects':'Objetos','Object details':'Detalles del objeto','View':'Vista','Viewpoints of this object':'Vistas de este objeto','Observations at this location':'Observaciones en esta ubicación','Earliest capture year':'Primer año de captura','Latest capture year':'Último año de captura','Change language':'Cambiar idioma',
-    'New data available · Update':'Hay datos nuevos · Actualizar','Updating selected layers…':'Actualizando las capas seleccionadas…','Update failed. Your current data is unchanged; try again.':'No se pudo actualizar. Se conservan los datos actuales; inténtalo de nuevo.','Loading street image…':'Cargando imagen de la calle…','Street image could not load. Switch to crop, then try again.':'No se pudo cargar la imagen. Cambia al recorte e inténtalo de nuevo.','Image could not load.':'No se pudo cargar la imagen.','Capture date unknown':'Fecha de captura desconocida','SAM detection · camera location':'Detección SAM · ubicación de la cámara','SAM person detection · camera location':'Persona detectada por SAM · ubicación de la cámara','OCR · automatic transcription':'OCR · transcripción automática','Cluster colors apply to previously clustered shop signs':'Los colores se aplican a los rótulos comerciales agrupados previamente','Object layers are unavailable. Saved shop signs are still available.':'Las capas no están disponibles. Los rótulos guardados siguen disponibles.','Items matching the capture-date filter':'Elementos que coinciden con el filtro de fecha','Total in snapshot; enable layer to filter by capture date':'Total de la colección; activa la capa para filtrar por fecha','loading…':'cargando…','retry':'reintentar','matches':'resultados','items':'elementos','observations':'observaciones','on':'activas','in view · click a dot to inspect':'en pantalla · pulsa un punto para inspeccionar','Captured':'Capturada','Prompt':'Prompt','score':'puntuación','views':'vistas','viewpoint':'vista','viewpoints grouped as one object':'vistas agrupadas como un objeto','Text across viewpoints (automatic OCR):':'Texto de las distintas vistas (OCR automático):','Street image containing':'Imagen de la calle con','Could not load':'No se pudo cargar','Select it to retry.':'Selecciona la capa para reintentar.','Person experiment':'Experimento de personas','street views':'vistas de calles'
-  };
-  const t=value=>language==='es'?(translations[value]||value):value;
-  document.documentElement.lang=language;
-  // Translate interface nodes only; detected text and provider metadata stay original.
-  const $ = id => document.getElementById(id), wall = $('wall');
-  for(const element of document.querySelectorAll('nav, .cluster-controls, .object-layers, .detail .arrows')){
-    const walker=document.createTreeWalker(element,NodeFilter.SHOW_TEXT);let node;
-    while(node=walker.nextNode()){const raw=node.nodeValue,trimmed=raw.trim();if(translations[trimmed])node.nodeValue=raw.replace(trimmed,t(trimmed));}
-  }
-  for(const element of document.querySelectorAll('[aria-label],[placeholder]'))for(const attr of ['aria-label','placeholder'])if(element.hasAttribute(attr))element.setAttribute(attr,t(element.getAttribute(attr)));
-  $('d-map').textContent=t('map');
-  $('language').textContent=language==='es'?'EN':'ES';$('language').onclick=()=>{try{localStorage.setItem('typology-language',language==='es'?'en':'es');}catch(error){}location.reload();};
-  if (matchMedia('(max-width:600px)').matches) $('object-layers').open=false;
-  let map, refreshMap = () => {}, order = [], shown = 0, cur = -1, curSign, curObject, full = false;
-  let colorClusters = false, clusterFilter = '', searchQuery = '', active = [], browse = [], manifest, availableManifest;
-  let captureFrom='', captureTo='', includeUnknownDates=true;
-  const dateSelections=new WeakMap();
-  const normalize = value => String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
-  const loaded = new Map(), enabled = new Set(['store_sign']), pending = new Map();
-  const legacy = await fetch('data.json').then(r => { if (!r.ok) throw Error('Could not load signs'); return r.json(); });
-  const signs = legacy.signs.map(s => ({...s, category:'store_sign', legacy_record:true, observation_id:s.source_crop_id, id:s.source_crop_id||s.id, score:s.score??s.s, crop:`img/${s.id}.jpg`, raw:s.ctx ? `ctx/${s.id}.jpg` : null}));
-  const clusters = new Map((legacy.meta.clustering?.clusters || []).map(c => [c.id,c]));
-  const categories = new Map([['store_sign', {id:'store_sign',label:'Shop signs',color:'#d79a3a',count:signs.length}]]);
-  signs.fallback=true;signs.objects=groupObservations(signs);loaded.set('store_sign', signs);
-  const matches = s => (!s.legacy_record || !clusterFilter || (clusterFilter === 'unassigned' ? !s.cluster_id : s.cluster_id === clusterFilter)) && (!searchQuery || normalize([s.search_text,s.text,s.t,s.b,s.st].filter(Boolean).join(' ')).includes(searchQuery));
-  const color = s => colorClusters && s.legacy_record ? s.cluster_color || '#55585d' : categories.get(s.category)?.color || '#ddd';
-  const label = s => t(categories.get(s.category)?.label || s.category);
-  const grouped = () => $('group-duplicates').checked;
-  const layerCount = c => grouped() ? (c.object_count ?? c.count-(c.same_view_duplicate_flags||0)) : c.count-(c.same_view_duplicate_flags||0);
-  $('group-duplicates').onchange=()=>updateSelection();
-  function groupObservations(rows){
-    const groups=new Map();
-    for(const row of rows){const id=row.duplicate_group||row.id;if(!groups.has(id))groups.set(id,[]);groups.get(id).push(row);}
-    return [...groups.entries()].map(([id,views])=>{
-      views.sort((a,b)=>Number(b.id===b.group_rep)-Number(a.id===a.group_rep) || (b.score||0)*Math.sqrt(b.w*b.h)-(a.score||0)*Math.sqrt(a.w*a.h) || a.id.localeCompare(b.id));
-      const texts=[...new Set(views.map(v=>(v.text||'').trim()).filter(Boolean))];
-      return {...views[0],object_id:id,views,search_text:texts.join('\n'),group_text:texts.join('\n')};
-    });
-  }
-  // Compare calendar dates as recorded by the provider, without local-time conversion.
-  // A month-only capture is an interval, not an invented first-of-month timestamp.
-  function captureInterval(value){
-    const match=String(value||'').match(/^(\d{4})-(\d{2})(?:-(\d{2})(?:T.*)?)?$/);
-    if(!match)return null;
-    const [,year,month,day]=match,y=Number(year),m=Number(month);
-    if(m<1||m>12)return null;
-    const last=new Date(Date.UTC(y,m,0)).getUTCDate();
-    if(day&&(Number(day)<1||Number(day)>last))return null;
-    const prefix=`${year}-${month}-`;
-    return day?[prefix+day,prefix+day]:[prefix+'01',prefix+String(last).padStart(2,'0')];
-  }
-  function captureMatches(row){
-    const span=captureInterval(row.d);
-    return span ? (!captureFrom||span[1]>=captureFrom)&&(!captureTo||span[0]<=captureTo) : includeUnknownDates;
-  }
-  function selectedRows(rows){
-    if(!captureFrom&&!captureTo&&includeUnknownDates)return grouped()?rows.objects||rows:rows;
-    const key=[captureFrom,captureTo,includeUnknownDates].join('|');
-    let cached=dateSelections.get(rows);
-    if(!cached||cached.key!==key){
-      const filtered=rows.filter(captureMatches);
-      cached={key,rows:filtered,objects:rows.objects?groupObservations(filtered):filtered};
-      dateSelections.set(rows,cached);
-    }
-    return grouped()?cached.objects:cached.rows;
-  }
-  const knownYears=signs.map(s=>Number(String(s.d||'').slice(0,4))).filter(y=>y>=1900&&y<=new Date().getFullYear());
-  const firstYear=Math.min(new Date().getFullYear(),...knownYears),lastYear=new Date().getFullYear();
-  for(const id of ['year-from','year-to']){$(id).min=firstYear;$(id).max=lastYear;}
-  $('year-from').value=firstYear;$('year-to').value=lastYear;
-  function applyCaptureYears(changed){
-    let from=Number($('year-from').value),to=Number($('year-to').value);
-    if(from>to){if(changed==='year-from')$('year-from').value=from=to;else $('year-to').value=to=from;}
-    $('year-from-value').textContent=from;$('year-to-value').textContent=to;
-    captureFrom=from===firstYear?'':`${from}-01-01`;captureTo=to===lastYear?'':`${to}-12-31`;
-    includeUnknownDates=$('date-unknown').checked;updateSelection();
-  }
-  $('year-from-value').textContent=firstYear;$('year-to-value').textContent=lastYear;
-  for(const id of ['year-from','year-to'])$(id).oninput=()=>applyCaptureYears(id);
-  $('date-unknown').onchange=()=>applyCaptureYears();
-  let searchTimer;
-  $('object-search').oninput=()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>{searchQuery=normalize($('object-search').value.trim());updateSelection();},150);};
-  $('focus-results').onclick=()=>{if(!active.length)return;setView('map');map.fitBounds(L.latLngBounds(active.map(s=>[s.la,s.lo])),{padding:[30,30],maxZoom:18});};
-
-  $('snapshot-update').onclick=async()=>{
-    if(!availableManifest || detail.hasAttribute('open'))return;
-    const button=$('snapshot-update');button.disabled=true;$('update-status').textContent=t('Updating selected layers…');
-    const next=availableManifest, selected=[...enabled];
-    document.querySelectorAll('.layer-option input').forEach(input=>input.disabled=true);$('layers-none').disabled=$('layers-all').disabled=true;
-    try {
-      const staged=await Promise.all(next.categories.filter(c=>selected.includes(c.id)).map(async c=>{
-        const response=await fetch(c.url);if(!response.ok)throw Error('Layer unavailable');
-        return [c.id,parseLayer(c,await response.json())];
-      }));
-      // Commit only after every selected layer succeeds; failed updates retain all old data.
-      manifest=next;for(const c of manifest.categories){const existing=categories.get(c.id);if(existing)Object.assign(existing,c);else{categories.set(c.id,c);addLayer(c);}loaded.delete(c.id);pending.delete(c.id);document.querySelector(`[data-category-count="${c.id}"]`).textContent=layerCount(c).toLocaleString();}
-      for(const [id,items] of staged)loaded.set(id,items);
-      if(availableManifest?.snapshot_id===next.snapshot_id)availableManifest=null;
-      updateSelection();button.hidden=!availableManifest;$('update-status').textContent='';
-    }catch(error){$('update-status').textContent=t('Update failed. Your current data is unchanged; try again.');}
-    finally{button.disabled=false;document.querySelectorAll('.layer-option input').forEach(input=>input.disabled=false);$('layers-none').disabled=$('layers-all').disabled=false;}
-  };
-  setInterval(async()=>{try{const next=await fetch('layers/manifest.json',{cache:'no-store'}).then(r=>{if(!r.ok)throw Error();return r.json();});if(manifest&&next.snapshot_id!==manifest.snapshot_id){availableManifest=next;$('snapshot-update').hidden=false;}}catch(error){/* Keep current snapshot usable while offline. */}},60000);
-  function updateSelection() {
-    active = [...enabled].flatMap(id => {const rows=loaded.get(id)||[];return selectedRows(rows);}).filter(matches);
-    for(const c of categories.values()){const count=document.querySelector(`[data-category-count="${c.id}"]`);if(count&&!pending.has(c.id)){const rows=loaded.get(c.id);count.textContent=rows?.fallback&&c.url?'—':(rows?selectedRows(rows).length:layerCount(c)).toLocaleString();count.title=rows?t('Items matching the capture-date filter'):t('Total in snapshot; enable layer to filter by capture date');}}
-    order = active.slice(); browse = order; cur = -1;
-    $('count').textContent = `${active.length.toLocaleString()} ${searchQuery?t('matches'):grouped()?t('items'):t('observations')}${grouped()?' · '+active.reduce((n,s)=>n+(s.views?.length||1),0).toLocaleString()+' '+t('observations'):''}`;
-    $('focus-results').disabled=!active.length;
-
-    $('layer-summary').textContent = `${t('Object layers')} · ${enabled.size} ${t('on')}`;
-    $('cluster-controls').hidden = !enabled.has('store_sign') || !clusters.size;
-    render(); refreshMap();
-  }
-  function parseLayer(c,data){
-    let rows=data.features.filter(f=>!f.properties.duplicate_of).map(f=>{const p=f.properties;return {...p,category:c.id,la:f.geometry.coordinates[1],lo:f.geometry.coordinates[0],w:p.width,h:p.height,d:p.date,u:p.provider_url,src:p.source==='gsv'?'g':'a',proposal:true};});
-    if(c.id==='store_sign'){
-      const original=new Map(signs.filter(s=>s.observation_id).map(s=>[s.observation_id,s])),seen=new Set();
-      rows=rows.map(row=>{const old=original.get(row.id);seen.add(row.id);return old?{...old,...row,legacy_record:true}:row;});
-      rows.push(...signs.filter(s=>!seen.has(s.observation_id)));
-    }
-    rows.objects=groupObservations(rows);return rows;
-  }
-
-  function addLayer(c) {
-    const row = document.createElement('label'); row.className='layer-option';
-    const input = document.createElement('input'); input.type='checkbox'; input.checked=enabled.has(c.id); input.dataset.category=c.id;
-    const swatch=document.createElement('span'); swatch.className='swatch'; swatch.style.background=c.color;
-    const name=document.createElement('span'); name.textContent=t(c.label)+(c.pilot?' · '+t('pilot'):'');if(c.pilot)name.title=`${t('Person experiment')} · ${c.completed_views||0} ${t('street views')}`;
-    const count=document.createElement('small'); count.textContent=layerCount(c).toLocaleString();count.dataset.categoryCount=c.id;
-    row.append(input,swatch,name,count); $('layer-options').append(row);
-    input.onchange=async () => {
-      const generation=manifest?.snapshot_id;
-      if (!input.checked) { enabled.delete(c.id); updateSelection(); return; }
-      enabled.add(c.id); updateSelection();
-      if (loaded.has(c.id)&&!loaded.get(c.id).fallback) return;
-      if(!c.url)return;
-      count.textContent=t('loading…'); row.setAttribute('aria-busy','true');
-      try {
-        if (!pending.has(c.id)) pending.set(c.id, fetch(c.url).then(r => { if (!r.ok) throw Error('Layer unavailable'); return r.json(); }).then(data => parseLayer(c,data)));        const items=await pending.get(c.id);if(generation!==manifest?.snapshot_id)return;loaded.set(c.id,items); pending.delete(c.id);count.textContent=layerCount(c).toLocaleString();
-        $('layer-error').textContent=''; updateSelection();
-      } catch (error) { pending.delete(c.id); enabled.delete(c.id); input.checked=false; count.textContent=t('retry'); $('layer-error').textContent=`${t('Could not load')} ${t(c.label)}. ${t('Select it to retry.')}`; updateSelection(); }
-      finally { row.removeAttribute('aria-busy'); }
-    };
-  }
-  addLayer(categories.get('store_sign'));
-  $('layers-all').onclick=()=>{for(const input of document.querySelectorAll('.layer-option input')){if(!input.checked){input.checked=true;input.onchange();}}};
-  $('layers-none').onclick=() => { enabled.clear(); document.querySelectorAll('.layer-option input').forEach(i=>i.checked=false); updateSelection(); };
-  for (const c of clusters.values()) { const o=document.createElement('option'); o.value=c.id;o.textContent=`${c.label} · ${c.name}`; $('cluster-filter').append(o); }
-  $('cluster-coverage').textContent=t('Cluster colors apply to previously clustered shop signs');
-  $('cluster-colors').onchange=()=>{colorClusters=$('cluster-colors').checked;render();refreshMap();};
-  $('cluster-filter').onchange=()=>{clusterFilter=$('cluster-filter').value;updateSelection();};
-  function more() { const end=Math.min(order.length,shown+180); for (;shown<end;shown++) {
-    const s=order[shown], b=document.createElement('button');b.className='tile';b.dataset.objectId=s.object_id||s.id;b.dataset.views=s.views?.length||1;b.style.borderBottom=`3px solid ${color(s)}`;b.setAttribute('aria-label',s.t||label(s));
-    const img=document.createElement('img');img.loading='lazy';img.src=s.crop;img.alt='';b.append(img);b.onclick=()=>{browse=order;open(s);};wall.append(b);
-  }}
-  function render(){wall.replaceChildren();shown=0;more();}
-  new IntersectionObserver(es=>{if(es[0].isIntersecting&&shown<order.length)more();},{rootMargin:'600px'}).observe($('more'));
-  $('shuffle').onclick=()=>{for(let i=order.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[order[i],order[j]]=[order[j],order[i]];}render();setView('wall');};
-  function setView(v){document.body.dataset.view=v;$('v-map').setAttribute('aria-pressed',String(v==='map'));$('v-wall').setAttribute('aria-pressed',String(v==='wall'));if(v==='map')map.invalidateSize();}
-  $('v-map').onclick=()=>setView('map');$('v-wall').onclick=()=>setView('wall');
-  map=L.map('map',{zoomControl:true}).setView([43.3665,-8.4065],15);
-  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:20,maxNativeZoom:19,attribution:'Imagery &copy; Esri, Maxar, Earthstar Geographics'}).addTo(map);
-  // A single canvas keeps large proposal layers out of the DOM. Nearby points aggregate
-  // on screen; these are display bundles, never claims about duplicate objects.
-  const ObservationCanvas=L.Layer.extend({
-    onAdd(m){this.canvas=L.DomUtil.create('canvas','observation-canvas');m.getPane('overlayPane').append(this.canvas);this.groups=[];m.on('moveend zoomend resize',this.draw,this);m.on('click',this.click,this);this.draw();},
-    onRemove(m){m.off('moveend zoomend resize',this.draw,this);m.off('click',this.click,this);this.canvas.remove();},
-    draw(){const size=map.getSize(),dpr=window.devicePixelRatio||1,c=this.canvas;c.width=size.x*dpr;c.height=size.y*dpr;c.style.width=size.x+'px';c.style.height=size.y+'px';L.DomUtil.setPosition(c,map.containerPointToLayerPoint([0,0]));const ctx=c.getContext('2d');ctx.scale(dpr,dpr);const cells=new Map(),bounds=map.getBounds(),cell=map.getZoom()<17?14:8;
-      for(const s of active){if(!bounds.contains([s.la,s.lo]))continue;const p=map.latLngToContainerPoint([s.la,s.lo]),key=`${Math.floor(p.x/cell)}:${Math.floor(p.y/cell)}`;let g=cells.get(key);if(!g){g={x:p.x,y:p.y,items:[]};cells.set(key,g);}g.items.push(s);}
-      this.groups=[...cells.values()];for(const g of this.groups){const colors=[...new Set(g.items.map(color))],r=map.getZoom()<17?Math.min(6,2+Math.log2(g.items.length)):g.items.length>1?Math.min(11,5+Math.log2(g.items.length)):4;g.r=r;colors.forEach((col,i)=>{ctx.beginPath();ctx.moveTo(g.x,g.y);ctx.arc(g.x,g.y,r,i/colors.length*Math.PI*2,(i+1)/colors.length*Math.PI*2);ctx.closePath();ctx.fillStyle=col;ctx.fill();});ctx.strokeStyle='#141519';ctx.lineWidth=1;ctx.beginPath();ctx.arc(g.x,g.y,r,0,Math.PI*2);ctx.stroke();if(g.items.length>1&&map.getZoom()>=17){ctx.fillStyle='#fff';ctx.font='bold 10px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(g.items.length>99?'99+':String(g.items.length),g.x,g.y);}}
-      $('map-status').textContent=`${this.groups.reduce((n,g)=>n+g.items.length,0).toLocaleString()} ${grouped()?t('items'):t('observations')} ${t('in view · click a dot to inspect')}`;
-    },
-    click(e){const p=e.containerPoint;let best=null,dist=Infinity;for(const g of this.groups){const d=Math.hypot(g.x-p.x,g.y-p.y);if(d<g.r+7&&d<dist){best=g;dist=d;}}if(best){browse=best.items;open(best.items[0]);}}
-  });
-  const observations=new ObservationCanvas().addTo(map);refreshMap=()=>observations.draw();
-  const detail=$('detail');
-  function showPic(){
-    const s=curSign,on=!!(full&&s.raw),img=$('d-img'),status=$('image-status');
-    status.textContent=on?t('Loading street image…'):'';img.parentElement.classList.toggle('is-loading',on);
-    img.onload=()=>{status.textContent='';img.parentElement.classList.remove('is-loading');};
-    img.onerror=()=>{img.parentElement.classList.add('is-loading');status.textContent=on?t('Street image could not load. Switch to crop, then try again.'):t('Image could not load.');delete detail.dataset.full;};
-    img.style.width=on?'':Math.min(800,innerWidth-32,innerHeight*.52*(s.w/s.h||1))+'px';
-    img.src=on?s.raw:s.crop;img.alt=on?`${t('Street image containing')} ${label(s)}`:s.t||label(s);
-    if(on&&s.bx){const[x0,y0,x1,y1]=s.bx;Object.assign($('d-box').style,{left:x0*100+'%',top:y0*100+'%',width:(x1-x0)*100+'%',height:(y1-y0)*100+'%'});detail.dataset.full='1';}else delete detail.dataset.full;
-    $('full').setAttribute('aria-pressed',String(on));$('full').textContent=on?t('show crop'):t('full image');$('full').hidden=!s.raw;
-  }
-  $('full').onclick=()=>{full=!full;showPic();};
-  function open(object,view){
-    curObject=object;curSign=view||object;const s=curSign;cur=browse.indexOf(object);showPic();
-    const views=object.views||[object],viewIndex=views.findIndex(v=>v.id===s.id);
-    $('d-text').textContent=s.text||s.t||s.b||label(s);
-    $('d-id').textContent=`${label(s)} · ${cur+1} / ${browse.length}${views.length>1?' · '+t('viewpoint')+' '+(viewIndex+1)+' / '+views.length:''}`;
-    $('d-where').textContent=s.proposal?(s.category==='person'?t('SAM person detection · camera location'):t('SAM detection · camera location')):[s.st,s.ba].filter(Boolean).join(' · ');
-    $('d-date').textContent=s.d?`${t('Captured')} ${s.d}`:t('Capture date unknown');
-    $('d-seen').textContent=s.proposal?`${t('Prompt')}: “${s.prompt}” · ${t('score')} ${Number(s.score).toFixed(2)}`:`${s.seen} ${t('views')}`;
-    $('d-ocr').textContent=s.text?t('OCR · automatic transcription'):'';$('d-ocr').title=s.ocr_model||'';
-    $('d-cluster').textContent=[s.proposal?(views.length>1?`${views.length} ${t('viewpoints grouped as one object')}`:''):null,clusters.get(s.cluster_id)?.name].filter(Boolean).join(' · ');
-    $('d-link').hidden=!s.u;$('d-link').href=s.u||'#';$('d-link').textContent=s.src==='g'?'Street View ↗':'Look Around ↗';
-    $('prev').disabled=$('next').disabled=browse.length<2;
-    $('d-map').onclick=e=>{e.preventDefault();close();setView('map');map.setView([s.la,s.lo],18);};
-    function thumbnails(target,items,selected,callback){target.replaceChildren();target.hidden=items.length<2;for(const item of items){const b=document.createElement('button');b.className='nearby-item';b.setAttribute('aria-label',`${label(item)} · ${item.id}`);b.setAttribute('aria-pressed',String(item.id===selected.id));b.style.borderColor=color(item);const image=document.createElement('img');image.src=item.crop;image.loading='lazy';image.alt=label(item);b.append(image);b.onclick=()=>callback(item);target.append(b);}}
-    thumbnails($('viewpoints'),views,s,item=>open(object,item));
-    thumbnails($('nearby'),browse===order?[]:browse,object,item=>open(item));
-    $('group-text').hidden=views.length<2||!object.group_text;
-    $('group-text').textContent=object.group_text?t('Text across viewpoints (automatic OCR):')+'\n'+object.group_text:'';
-    detail.setAttribute('open','');$('close').focus();
-  }
-  function close(){detail.removeAttribute('open');}
-  function step(d){if(cur<0||!browse.length)return;open(browse[(cur+d+browse.length)%browse.length]);}
-  $('close').onclick=close;$('prev').onclick=()=>step(-1);$('next').onclick=()=>step(1);
-  detail.onclick=e=>{if(e.target===detail)close();};document.addEventListener('keydown',e=>{if(detail.hasAttribute('open')){if(e.key==='Escape')close();if(e.key==='ArrowRight')step(1);if(e.key==='ArrowLeft')step(-1);if(e.key==='f'){full=!full;showPic();}}});
-  updateSelection();
-  try{manifest=await fetch('layers/manifest.json',{cache:'no-store'}).then(r=>{if(!r.ok)throw Error('Layers unavailable');return r.json();});for(const c of manifest.categories){const existing=categories.get(c.id);if(existing)Object.assign(existing,c);else{categories.set(c.id,c);addLayer(c);}} enabled.clear();document.querySelector('[data-category="store_sign"]').checked=false; for(const id of ['graffiti','street_name_plate']){const input=document.querySelector(`[data-category="${id}"]`);if(input){input.checked=true;input.onchange();}} updateSelection();}
-  catch(error){$('layer-error').textContent=t('Object layers are unavailable. Saved shop signs are still available.');}
-})();
-</script>
+<script src="app.js"></script>
 </body>
 </html>

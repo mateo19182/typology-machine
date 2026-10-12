@@ -30,11 +30,10 @@ VIEW_HW = (1600, 2048)
 PITCH = 8.0
 
 
-def cut_views(im, n):
+def cut_views(im, n, yaws=None):
     e = np.asarray(im)
     out = []
-    for k in range(n):
-        yaw = k * 360.0 / n
+    for yaw in (yaws if yaws is not None else (k * 360.0 / n for k in range(n))):
         v = py360convert.e2p(e, fov_deg=FOV, u_deg=yaw, v_deg=PITCH, out_hw=VIEW_HW, mode="bilinear")
         out.append((yaw, Image.fromarray(v)))
     return out

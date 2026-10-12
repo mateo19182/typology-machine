@@ -2,6 +2,7 @@
 import argparse
 import base64
 import hashlib
+import html
 from io import BytesIO
 import itertools
 import json
@@ -38,12 +39,13 @@ def build(folder, destination):
                 reason=f"{category}: all {len(evidence)} pairs independently verified. Minimum local coverage {min(min(e['coverage'])for e in evidence):.1%}. Same capture day; different panoramas; no semantic embedding filter. Every group member is shown."))
     data=dict(snapshot='multicategory-pilot-'+hashlib.sha256(json.dumps(config,sort_keys=True).encode()).hexdigest()[:16],cases=cases,images=images,summaries=summaries)
     template=(ROOT/'explore/dedupe_review.html').read_text();start=template.index('<p>Review the saved');end=template.index('<p class="notice">',start)
-    intro=f'''<p>Graffiti and street-name duplicate proposals from the new SAM detections. Judge physical identity, including whether separate graffiti pieces were accidentally joined. All group members are shown.</p>
+    intro=f'''<p>Duplicate proposals for {html.escape(', '.join(config['categories']))} from the SAM detections. Judge physical identity, including whether separate objects were accidentally joined. All group members are shown.</p>
 <details open><summary>CPU pilot: what was checked</summary><p>{summary['sampled']:,} observations selected near the map center, {config['sample_limit_per_category']} per category. Every candidate pair within 100 m inside that sample was checked. Different panoramas, same recorded capture day, at least 20 reciprocal SIFT matches, {config['policy']['min_inlier_ratio']:.0%} geometric agreement and {config['policy']['min_coverage']:.0%} coverage of each unpadded detection. Every pair in a group must pass. No camera-angle filter.</p><p>No DINO or Qwen semantic embeddings were computed. Saved local SIFT descriptors and pair evidence can be reused to extend this pilot. Matching templates and separate tags can still produce false positives; these category proposals need their own review.</p><p>All {summary['observations']:,} observations remain saved. Unsampled observations and same-view duplicate flags remain separate. This review does not collapse observations on the frontend.</p></details><details><summary>Results and sample</summary><div id="stats"></div><p>Per category: largest groups, weakest local coverage and agreement, widest camera spans, then random remaining groups. This is a targeted review, not an accuracy estimate.</p></details>'''
     if config['policy'].get('context_geometry'):
         intro += '<p><b>Additional physical-location check:</b> matching features outside the detection must establish a shared-scene transform, and that transform must align the object boxes in both directions. At least 20 background inliers, 50% agreement, 20% projected overlap and a center inside the counterpart box. This rejects identical designs at different places. Context rejection can miss legitimate duplicates.</p>'
     template=template[:start]+intro+template[end:]
-    template=template.replace('Source <select','Category <select').replace('<option value="all">Both sources</option><option>apple</option><option>gsv</option>','<option value="all">Both categories</option><option>graffiti</option><option>street_name_plate</option>')
+    options = '<option value="all">All categories</option>' + ''.join(f'<option>{html.escape(c)}</option>' for c in config['categories'])
+    template=template.replace('Source <select','Category <select').replace('<option value="all">Both sources</option><option>apple</option><option>gsv</option>', options)
     template=template.replace('weakest pair similarity ${c.min_similarity.toFixed(3)}','lowest feature agreement ${(100*c.min_similarity).toFixed(1)}%')
     template=template.replace("$('cards').append(card)","const link=document.createElement('a');link.href=m.raw;link.target='_blank';link.rel='noopener';link.textContent='Full street image ↗';card.append(link);$('cards').append(card)")
     template=template.replace('__DATA__',json.dumps(data,separators=(',',':')).replace('</','<\\/'))

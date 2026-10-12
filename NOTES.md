@@ -241,3 +241,87 @@ signs 307, traffic lights 260, benches 192, manholes 167. Viewer: `data/coruna/t
 - User abandoned the independent street-text detector after review. Keep its artifacts; do not expand or publish its proposals.
 - Current map: one Shop signs layer combining old Apple/Google representatives with new observations using exact source-crop IDs and accepted groups. People and Pets are regular layers, without a classifier or cross-image person/pet matching.
 - UI: compact capture-year range, Select all/Clear all, ES/EN language preference, technical bilingual `method.html`. Removed explanatory panel subtitles.
+
+## 2026-10-12 · Google GPU run prepared
+
+- User requested a full-category Google run and parallel downloads of remaining
+  indexed images, prioritizing total dollar cost. Frozen first bundle: 4,408 current
+  panoramas, 35,264 views, 21.7 GB; run `9d984d64aa7e`. All 13 categories included
+  from the start. Model revision matches Apple; source hashes and portable paths
+  allow local import. No inference has run on the rented GPU yet.
+- Google workers now shard/skip completed views before panorama projection.
+  Existing Apple run configuration and saved predictions are preserved.
+- Remaining current-image downloads started as `typology-google-fetch.service`,
+  four workers, no thinning, no history expansion, 60 GiB disk reserve.
+- Vast API account access works. Account currently has zero credit and no payment
+  method. No rental purchased. Live compatible candidates were about $0.206/hour
+  for on-demand RTX 3090 or $0.137/hour minimum interruptible price, including
+  100 GB disk. Offers change; recheck before renting. Credential stored outside
+  the repository and excluded from the GPU bundle.
+- Local CUDA and bundle preflight passed. Remote smoke inference and throughput
+  measurement remain. Current Torch wheels require CUDA 13 compatible hosts.
+
+2026-10-12: User funded Vast and authorized the on-demand Google run. Rented one
+RTX 3090 (instance 55604140, Norway) at $0.205185/hour including 100 GB storage;
+network fees $0.001302/GB each way. Frozen run 9d984d64aa7e still contains 4,408
+panoramas / 35,264 views. Local `typology-vast-watch.service` retrieves results
+and checks final checksums and referenced assets before deleting this rental.
+`typology-vast-hard-stop.timer` independently stops compute at 06:17 CEST Oct 13
+if cleanup has not finished; a stopped rental retains billable disk for recovery.
+Credentials and the dedicated SSH key remain outside the repository.
+Google projection now advances in its loader thread and overlaps GPU inference;
+two projected views matched the original pixels. Remote dependency pins include
+OpenCV to preserve the fast projection backend. A 1/2/4-worker benchmark selects
+concurrency from completed views; benchmark predictions are retained in the run.
+Live state: `data/coruna/vast_run.json`; remote logs will be copied to
+`data/coruna/vast_logs/`. Initial container setup and remote inference verification
+were still pending when this note was written.
+
+Vast launch follow-up: remote Python/Torch/CUDA checks and eight-view inference
+passed. Local upload was only ~1–2 MB/s, so frozen inputs are fetched directly on
+the host (roughly 3 panoramas/second), with exact SHA256 acceptance. The local
+watcher uploads cached originals for checksum exceptions. Downloader threads have
+lower CPU priority than inference. One/two/four-worker benchmarks completed 224
+additional views and measured 0.862/1.247/1.298 views/second after warmup. Four
+workers were selected; all benchmark views remain in the production output.
+The full run launched at ~21:35 CEST with eight hours maximum inference and the
+original nine-hour rental deadline. Projection/backend pins, configuration and
+staged input checks passed remotely; retrieved sample outputs included all 13
+attempted categories and valid crop/mask paths. A visual shop-sign crop check
+matched the proposed category. Current estimate is ~7.5 hours of inference and
+$1.70–$2 total for this frozen batch, subject to actual sustained throughput.
+The watcher now also ends a run with no new completed views for 15 minutes.
+Newer Google downloads continue locally and are outside this frozen inventory.
+
+## 2026-10-12: map browsing, barrio filters and downloads
+
+- User narrowed cleanup work to downloads and map navigation, adding barrio filters.
+- Added 109 municipal Barrios / AA VV polygons from Concello da Coruña, with source
+  attribution and a refresh script. Membership follows each record's displayed
+  coordinates; new observations generally use camera positions.
+- Map thumbnails follow the viewport, numbered points reveal nearby objects, and
+  inspection keeps the map visible. Added source/area/barrio filters, reset, street
+  basemap, URL state and sharing. ES/EN controls retained.
+- CSV/GeoJSON/JSONL exports use the current selection and grouping mode, preserve
+  retained viewpoints and provenance, and link existing images. A manifest records
+  filters and snapshot metadata. Layer exports now include per-record run IDs and
+  model revisions/prompts in their manifest.
+- Implementation review only; no automated or browser tests requested or run.
+
+
+## 2026-10-12: queued completion, backfill and duplicate review
+
+- User authorized ongoing progress checks, Google completion/import, people/pets
+  backfill, relevant deduplication, and pushing all project changes to GitHub.
+- Installed five-minute follow-up timer. Apple completion is required before the
+  one-worker people/pets backfill starts. Verified all 48,009 source files exist;
+  none of those source results already attempted person/pet categories.
+- Google publishing waits for the watcher's verified final copy and rental cleanup.
+  Stopped rentals remain a recovery task. No new rental or batch was purchased.
+- Started a separate CPU duplicate proposal pass for 4,500 sampled observations
+  across shop signs, graffiti and street-name plates. Initial snapshot contains
+  186,352 observations and 290,753 eligible pairs. Existing approved groups are
+  unchanged; the service generates a review page after matching finishes.
+- Existing 30 unittest cases and four new backfill/handoff cases passed. JavaScript
+  and shell syntax checks and systemd unit verification passed. GPU backfill
+  inference is queued, not yet smoke-tested on the GPU.

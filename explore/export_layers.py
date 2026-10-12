@@ -79,7 +79,7 @@ def feature(result, prediction, crop_url, run_id):
     if result['source'] == 'gsv':
         provider_url = 'https://www.google.com/maps/@?' + urlencode({'api': 1, 'map_action': 'pano', 'pano': metadata['id']})
     props = {
-        'id': prediction['id'], 'category': prediction['category_proposal'],
+        'id': prediction['id'], 'category': prediction['category_proposal'], 'run_id': run_id,
         'score': round(prediction['score'], 5), 'prompt': prediction['prompt'],
         'crop': crop_url, 'width': round(crop_box[2] - crop_box[0]), 'height': round(crop_box[3] - crop_box[1]),
         'date': metadata.get('date', ''), 'source': result['source'], 'view_id': result['view_id'],
@@ -146,7 +146,7 @@ def export_locked(city_base, run, out, if_changed, extra_runs=()):
         inputs.append({'run': folder, 'config': config, 'results': results,
                        'ocr': ocr, 'ocr_sha': ocr_sha, 'groups': groups, 'stats': stats,
                        'original_prompts': original_prompts, 'extension_sha': extension_sha})
-    signature = hashlib.sha256(json.dumps({'schema': 5, 'groups': group_sources, 'runs': [
+    signature = hashlib.sha256(json.dumps({'schema': 6, 'groups': group_sources, 'runs': [
         {'run': str(item['run'].resolve()), 'config': item['config'],
          'results': item['stats'], 'ocr': item['ocr_sha'], 'additional_prompts': item['extension_sha']} for item in inputs
     ]}, sort_keys=True).encode()).hexdigest()
@@ -221,7 +221,7 @@ def export_locked(city_base, run, out, if_changed, extra_runs=()):
     category_runs = {category: [data for data in inputs if category in data['config']['prompts']]
                      for category in prompts}
     manifest = {
-        'schema_version': 5, 'group_sources': group_sources, 'grouping': 'partial_duplicate_proposals', 'input_signature': signature,
+        'schema_version': 6, 'group_sources': group_sources, 'grouping': 'partial_duplicate_proposals', 'input_signature': signature,
         'published_at': datetime.now(timezone.utc).isoformat(),
         'latest_detection_at': datetime.fromtimestamp(max((x[2] for data in inputs for x in data['stats']), default=0) / 1e9, timezone.utc).isoformat(),
         'ocr_records': sum(len(data['ocr']) for data in inputs), 'refresh_interval_seconds': 900,
@@ -229,7 +229,8 @@ def export_locked(city_base, run, out, if_changed, extra_runs=()):
         'run_id': run.name, 'source': config['source'], 'completed_views': len(inputs[0]['results']),
         'runs': [{'run_id': data['run'].name, 'source': data['config']['source'],
                   'completed_views': len(data['results']), 'model': data['config']['model'],
-                  'threshold': data['config']['threshold']} for data in inputs],
+                  'threshold': data['config']['threshold'], 'revision': data['config'].get('revision'),
+                  'prompts': data['config']['prompts']} for data in inputs],
         'status': 'unverified_proposals', 'location_basis': 'camera', 'deduplicated': False,
         'total_detections': sum(counts.values()), 'results_sha256': fingerprint.hexdigest(),
         'model': config['model'], 'threshold': config['threshold'],
