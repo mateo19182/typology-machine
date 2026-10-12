@@ -159,3 +159,20 @@ panorama near it, from any year, is a known camera: compute bearing, pitch and a
 that window. No detector touches the old imagery. First strips: a storage-unit sign on a corner
 seen on 17 dates from October 2008 to February 2024, with two different businesses before it. The
 framing is a few degrees loose; the fix is to let SAM 3 snap the crop inside each dated window.
+
+**Better than snapping: match the detections.** The Google detector runs on every historical
+panorama anyway, so the old imagery is already full of dated sign detections. A Google detection
+is a ray; if it passes within a metre or so of an Apple sign's triangulated position, at a
+compatible height and angular size, it is that sign on that date, framed by the detector itself.
+Two checks made it clean: ignore rays from the far side of the wall (the sign "faces" the mean
+direction of the Apple rays that saw it; a Google ray more than 75° off cannot be looking at it),
+and stop trusting rays beyond 28 m, where a one-metre tolerance picks the neighbour's banner.
+Full Apple city after the long run: 118,756 crops, 72,290 groups, 13,610 signs placed from two or
+more rays. Half the old town's Google panoramas fetched so far already give 9,600 dated detections
+on 381 of those signs. A sports bar's "Manhattan" lettering holds from 2008 to 2024, then "arenal"
+in 2025; a shoe shop's chrome script stays untouched sixteen years and is gone in the Apple
+2026 pass. Dates where a nearby panorama exists but nothing matched get a window cut by geometry
+and are flagged "no sign found here": those are the years before the sign existed.
+
+**Viewer.** A street-window stage with the year as a big numeral, a rail with one tick per capture
+placed by date (so gaps in coverage read as gaps), and dragging across the picture scrubs the years.

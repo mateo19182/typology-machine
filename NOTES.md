@@ -62,3 +62,14 @@ signs 307, traffic lights 260, benches 192, manholes 167. Viewer: `data/coruna/t
 - Time: Mapillary 2019 dashcam vs Apple 2026 for the same streets? Low quality on the 2019 side.
   Google history would be far better if an endpoint comes back.
 - Presentation: web grid, print, or something playful (see Yufeng Zhao in PRIOR_ART.md).
+
+## Sign histories (2026-10-12)
+- `match_sources.py`: Google detection ray vs Apple sign position. Keeps perp ≤ max(1 m, 5 % of range), range 2–28 m,
+  height within 1.5 m, angular width ratio 0.4–2.5, and the ray within 75° of the sign's facing (mean Apple ray).
+- Known weakness: on a busy corner (poster column in front of a fascia, banner above it) the per-date pick
+  alternates between objects. Next idea: pick per-date candidates as a chain (Viterbi) maximising DINOv2
+  similarity between consecutive picks plus geometry, so a run of the same object wins over alternation.
+- `history_strip.py` cuts 4:3 windows 3.2 sign-widths wide at the detection's bearing/pitch; undetected dates
+  with a pano ≤ 22 m on the facing side get a geometric window flagged `detected=false`.
+- Viewer sprites: one vertical sprite of 480×360 windows per sign plus one horizontal strip of 240×160 crops,
+  because an artifact publish takes at most 255 files / 64 MB (two publishes for 160 signs, 86 MB).
