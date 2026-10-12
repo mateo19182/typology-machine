@@ -10,18 +10,25 @@ import shutil
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
+import pillow_heif
 from PIL import Image
 from streetlevel import lookaround
+
+pillow_heif.register_heif_opener()
 
 ROOT = Path(__file__).resolve().parent.parent
 
 
 def thumb(job):
-    src, dst, size = job
+    src, dst, size, face, ctx, ctx_size = job
     try:
         im = Image.open(src).convert("RGB")
         im.thumbnail((size, size))
         im.save(dst, quality=80, optimize=True)
+        if ctx and not ctx.exists() and face.exists():  # the whole source face, downscaled, for the detail toggle
+            f = Image.open(face).convert("RGB")
+            f.thumbnail((ctx_size, ctx_size))
+            f.save(ctx, quality=75, optimize=True)
         return im.width, im.height
     except Exception as e:
         print("failed", src, repr(e)[:80])
@@ -39,10 +46,12 @@ def main():
     ap.add_argument("--min-side", type=int, default=48)
     ap.add_argument("--size", type=int, default=256)
     ap.add_argument("--workers", type=int, default=8)
+    ap.add_argument("--ctx-size", type=int, default=1400, help="long side of the full-face context image; 0 to skip")
     a = ap.parse_args()
     base = Path("data") / a.city / a.source / a.slug
     out = Path(a.out)
     (out / "img").mkdir(parents=True, exist_ok=True)
+    (out / "ctx").mkdir(exist_ok=True)
 
     rows = {r["id"]: r for r in map(json.loads, open(base / "instances.jsonl"))}
     groups = {g["sign"]: g for g in map(json.loads, open(base / "groups.jsonl"))}
@@ -64,7 +73,9 @@ def main():
     picks.sort(key=lambda x: -x[1]["score"])
     print(len(picks), "signs of", len(pos), "triangulated")
 
-    jobs = [(base / r["crop"], out / "img" / f"{p['sign']}.jpg", a.size) for p, r, _ in picks]
+    faces = Path("data") / a.city / a.source / "faces"
+    jobs = [(base / r["crop"], out / "img" / f"{p['sign']}.jpg", a.size, faces / f"{r['pano']}_{r['face']}.heic",
+             (out / "ctx" / f"{p['sign']}.jpg") if a.ctx_size else None, a.ctx_size) for p, r, _ in picks]
     with ProcessPoolExecutor(a.workers) as ex:
         sizes = list(ex.map(thumb, jobs, chunksize=32))
 
@@ -74,7 +85,10 @@ def main():
             continue
         l = loc.get(r["id"], {})
         yaw = {0: 0, 1: 90, 2: 180, 3: -90}.get(r["face"], 0)
-        o = {"id": p["sign"], "s": r["score"], "d": r["date"][:7], "seen": len(groups[p["sign"]]["members"]),
+        W, H = r["face_size"]
+        x0, y0, x1, y1 = r["box"]
+        o = {"bx": [round(x0 / W, 4), round(y0 / H, 4), round(x1 / W, 4), round(y1 / H, 4)],
+             "ctx": (out / "ctx" / f"{p['sign']}.jpg").exists(),"id": p["sign"], "s": r["score"], "d": r["date"][:7], "seen": len(groups[p["sign"]]["members"]),
              "la": round(p["lat"], 6), "lo": round(p["lon"], 6), "hm": p["height_m"], "w": wh[0], "h": wh[1],
              "st": l.get("street"), "ba": l.get("barrio"),
              "u": lookaround.build_permalink(lat=r["lat"], lon=r["lon"], heading=math.degrees(r["heading"]) + yaw, radians=False)}

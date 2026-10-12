@@ -20,7 +20,7 @@ header { padding: 14px 16px 10px; display: flex; flex-wrap: wrap; gap: 8px 24px;
 .mast b { color: var(--fg); font-weight: 400 }
 nav { display: flex; gap: 14px; flex-wrap: wrap }
 nav button, .detail button, .detail a.btn { font: inherit; background: none; border: 0; color: var(--dim); cursor: pointer; padding: 2px 0; letter-spacing: .08em; text-transform: uppercase; border-bottom: 1px solid transparent }
-nav button[aria-pressed="true"] { color: var(--amber); border-bottom-color: var(--amber) }
+nav button[aria-pressed="true"], .detail button[aria-pressed="true"] { color: var(--amber); border-bottom-color: var(--amber) }
 nav button:hover, .detail button:hover, .detail a.btn:hover { color: var(--fg) }
 nav button:focus-visible, .tile:focus-visible, .detail button:focus-visible, .detail a.btn:focus-visible { outline: 1px solid var(--amber); outline-offset: 2px }
 
@@ -45,7 +45,10 @@ body[data-view="map"] .wall, body[data-view="map"] .more, body[data-view="map"] 
 .detail[open] { display: grid; grid-template-rows: auto 1fr auto }
 .detail .top { display: flex; justify-content: space-between; gap: 16px; align-items: baseline }
 .detail figure { margin: 0; display: grid; place-items: center; min-height: 0 }
-.detail img { max-width: min(100%, 980px); max-height: 62vh; object-fit: contain }
+.detail .pic { position: relative; display: inline-block; line-height: 0 }
+.detail .pic img { max-width: min(100%, 980px); max-height: 62vh; display: block }
+.detail .pic .box { position: absolute; border: 1.5px solid var(--amber); box-shadow: 0 0 0 1px rgba(0,0,0,.5); pointer-events: none; display: none }
+.detail[data-full] .pic .box { display: block }
 .detail .info { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 24px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--dim) }
 .detail .info .t { color: var(--fg); font-size: 16px; min-width: 0; overflow-wrap: anywhere }
 .detail .info .meta { display: flex; flex-wrap: wrap; gap: 4px 18px }
@@ -80,9 +83,9 @@ footer { padding: 28px 16px; color: var(--dim); display: flex; flex-wrap: wrap; 
 <div class="detail" id="detail" role="dialog" aria-modal="true" aria-label="Sign">
   <div class="top">
     <div class="mast" id="d-id"></div>
-    <div class="arrows"><button id="prev">← prev</button><button id="next">next →</button><button id="close">close ✕</button></div>
+    <div class="arrows"><button id="full" aria-pressed="false">full image</button><button id="prev">← prev</button><button id="next">next →</button><button id="close">close ✕</button></div>
   </div>
-  <figure><img id="d-img" alt=""></figure>
+  <figure><div class="pic"><img id="d-img" alt=""><div class="box" id="d-box"></div></div></figure>
   <div class="info">
     <div class="t" id="d-text"></div>
     <div class="meta">
@@ -167,9 +170,18 @@ footer { padding: 28px 16px; color: var(--dim); display: flex; flex-wrap: wrap; 
 
   // ---- detail
   const detail = $('detail');
+  let full = false, curSign = null;
+  function showPic() {
+    const s = curSign, on = full && s.ctx;
+    $('d-img').src = on ? `ctx/${s.id}.jpg` : `img/${s.id}.jpg`;
+    if (on) { const [x0, y0, x1, y1] = s.bx; Object.assign($('d-box').style, { left: x0 * 100 + '%', top: y0 * 100 + '%', width: (x1 - x0) * 100 + '%', height: (y1 - y0) * 100 + '%' }); detail.dataset.full = '1'; }
+    else delete detail.dataset.full;
+    $('full').setAttribute('aria-pressed', String(on)); $('full').hidden = !s.ctx;
+  }
+  $('full').addEventListener('click', () => { full = !full; showPic(); });
   function open(s) {
-    cur = order.indexOf(signs.indexOf(s));
-    $('d-img').src = `img/${s.id}.jpg`;
+    cur = order.indexOf(signs.indexOf(s)); curSign = s;
+    showPic();
     $('d-text').textContent = s.t || s.b || '';
     $('d-id').textContent = s.id;
     $('d-where').textContent = [s.st, s.ba].filter(Boolean).join(' · ');
@@ -186,7 +198,7 @@ footer { padding: 28px 16px; color: var(--dim); display: flex; flex-wrap: wrap; 
   $('next').addEventListener('click', () => step(1));
   detail.addEventListener('click', e => { if (e.target === detail) close(); });
   document.addEventListener('keydown', e => {
-    if (detail.hasAttribute('open')) { if (e.key === 'Escape') close(); if (e.key === 'ArrowRight') step(1); if (e.key === 'ArrowLeft') step(-1); }
+    if (detail.hasAttribute('open')) { if (e.key === 'Escape') close(); if (e.key === 'ArrowRight') step(1); if (e.key === 'ArrowLeft') step(-1); if (e.key === 'f') { full = !full; showPic(); } }
   });
 
   render();
