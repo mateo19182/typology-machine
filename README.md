@@ -459,3 +459,15 @@ including 5,655 multi-view groups. Also included: eight graffiti groups and nine
 street-name groups. Validation checked every exported ID/count and preserved
 observation, plus grouped/raw toggling, viewpoint navigation, search through a
 non-representative view, context images, mobile layout and safe refresh behavior.
+
+### Street-text image experiment
+
+Run `.venv/bin/python explore/street_text_experiment.py --run data/coruna/apple/multicategory/765844a02f75` to build a CPU-only, detection-only review at `http://100.83.166.6:8791/street-text/`.
+
+The frozen 50-scene sample contains 25 randomly selected views and five each with graffiti, street-name proposals, shop signs, other categories, or no SAM proposals. It selects distinct panoramas from completed views. This is an exploratory sample, not a city-wide accuracy estimate. RapidOCR's installed text detector runs on the original perspective image and overlapping 1536-pixel tiles. Recognition and orientation classification are disabled: unreadable lettering can still produce a saved crop. The detector can also miss lettering or detect non-text patterns.
+
+Each region retains its polygon in source-image coordinates, a padded image crop, whole-image/tile provenance, and overlapping SAM proposal IDs/categories. At least half of a region's axis-aligned box must fall inside a SAM box to count as overlapping; that does not prove semantic coverage. Overlapping tile detections are merged only within the same view. Existing SAM results and deduplication groups remain untouched. The detector checkpoint hash, configuration, frozen sample, source metadata, and resumable per-view records live under `data/coruna/comparison_share/street-text/`.
+
+The review offers crops, numbered scene overlays, original-resolution images, coverage filters, optional SAM boxes, per-region text/not-text labels, and scene-level missed-text notes. Labels stay in browser local storage until exported as JSON. Generated images and reports are excluded from Git.
+
+The first completed sample, `41a87cef15e0`, produced 880 candidate regions across 50 scenes: 547 outside SAM boxes, 80 overlapping other SAM categories, and 253 overlapping shop-sign/street-name boxes. 661 retained regions had tile-only provenance. These are detector candidates, not confirmed text counts; the whole-image and tiled passes can also split lettering differently. Visual spot-checks found additional house numbers, shop lettering and graffiti, but many false positives on windows, foliage and grilles. This baseline needs review/filtering before map publication. The 50-scene CPU pass took about 12 minutes while SAM continued running. Crop dimensions, full-resolution context files, browser navigation/filters/local review storage, and unchanged per-view records on resume were checked.
