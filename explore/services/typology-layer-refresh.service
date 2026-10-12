@@ -1,0 +1,10 @@
+[Unit]
+Description=Refresh Typology object layer snapshot
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/mateo/projects/typology-machine
+ExecStart=/home/mateo/projects/typology-machine/.venv/bin/python -u explore/export_layers.py coruna --run data/coruna/apple/multicategory/765844a02f75 --if-changed --prune-hours 24
+Environment=OPENBLAS_NUM_THREADS=1
+Nice=10
+TimeoutStartSec=900

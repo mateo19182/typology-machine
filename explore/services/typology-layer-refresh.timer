@@ -1,0 +1,10 @@
+[Unit]
+Description=Refresh Typology object layers every 15 minutes
+
+[Timer]
+OnCalendar=*:0/15
+Persistent=true
+Unit=typology-layer-refresh.service
+
+[Install]
+WantedBy=timers.target

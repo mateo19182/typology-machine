@@ -2,6 +2,22 @@
 
 Running log. Nothing here is a commitment; newest at the top.
 
+## 2026-10-12 · categories before appearance clusters
+
+- The DINOv2/v3 comparison prompted a shift toward browsing recognizable object categories.
+  Add graffiti and street-name plates alongside store signs and the earlier street-object types:
+  advertisement posters, banners, bins, street lights, poles, benches, manhole covers, traffic signs,
+  and junction boxes. These are intended categories, not a claim of complete city coverage.
+- The comparison displays padded JPEG rectangles and embeds those same rectangles. SAM masks
+  exist separately at quarter resolution. Keep saving masks, but leave them out of the current
+  display and classification pipeline; use the rectangular crops for now.
+- A `store sign` detection is a candidate, not a verified class. Incidental graffiti and street plates
+  can seed galleries, but dedicated prompt trials on source imagery are needed to find missed objects.
+  Graffiti must not be discarded merely because an `is_sign` check says no.
+- Keep object category separate from optional appearance clusters within a category. Preserve the
+  detector prompt, classification provenance, masks, source image, date, and position quality.
+- Qwen embedding evaluation is deferred.
+
 ## 2026-10-11
 
 ### Decided (for now)
@@ -58,7 +74,8 @@ signs 307, traffic lights 260, benches 192, manholes 167. Viewer: `data/coruna/t
 ### Open threads
 - Which object first? Store signs have the most variety; street lights and trash cans are more Becher.
   Apple's quality might make small things (manholes, doorbells, door handles) viable that Mapillary can't do.
-- Dedupe: GPS clustering plus visual embedding (DINOv2) seems the obvious move.
+- Dedupe: prioritize avoiding false merges over finding every duplicate. The old proximity + DINO
+  connected components merged different signs at the same storefront. Keep uncertain observations separate.
 - Time: Mapillary 2019 dashcam vs Apple 2026 for the same streets? Low quality on the 2019 side.
   Google history would be far better if an endpoint comes back.
 - Presentation: web grid, print, or something playful (see Yufeng Zhao in PRIOR_ART.md).
@@ -73,3 +90,145 @@ signs 307, traffic lights 260, benches 192, manholes 167. Viewer: `data/coruna/t
   with a pano ≤ 22 m on the facing side get a geometric window flagged `detected=false`.
 - Viewer sprites: one vertical sprite of 480×360 windows per sign plus one horizontal strip of 240×160 crops,
   because an artifact publish takes at most 255 files / 64 MB (two publishes for 160 signs, 86 MB).
+
+## Deduplication review feedback (2026-10-12)
+- User found the original groups mostly incorrect, particularly different signs at the same location.
+- V1's local-feature checks and conservative pairs looked better. User requested larger groups and no
+  camera-angle filtering. V2 requires all pairs within each group to pass independent visual checks.
+- User said the displayed v2 examples were correct and requested wider matching. This is feedback on
+  reviewed examples, not a measured precision claim for the entire dataset.
+- V3 searches across old group boundaries, expands the radius from 20 to 35 m, relaxes cosine similarity
+  from 0.95 to 0.92 and competitor margin from 0.03 to 0.02. Local-feature checks stay unchanged; existing
+  v2 groups remain intact. No camera-angle filter or group-size cap. Same-date constraints remain.
+- User also approved the displayed v3 examples and requested further widening. V4 uses cosine 0.88,
+  competitor margin 0.01 and 50 m search radius, preserving v3 groups and the same local-feature gates.
+  Feedback refers to the displayed sample; new matches still need inspection.
+- User approved the displayed v4 examples and requested more widening. V5 uses cosine 0.84,
+  competitor margin 0.005 and radius 65 m, preserving v4 groups and local-feature thresholds.
+
+- User approved the displayed v5 duplicate examples and requested much wider matching.
+  V6 lowers similarity to 0.78 and competitor margin to 0.002; local-feature checks
+  remain unchanged and v5 groups are preserved. User rejected a proposed 100 m
+  radius, so v6 retains 65 m. Stop the initial 100 m experiment and regenerate both
+  sources before publishing the review. This is sample feedback, not measured precision.
+- User requested concurrent SAM inference. Workers must have disjoint assignments,
+  preserve completed predictions, and continue sharing each image encoding across prompts.
+- User requested local Trace-it stay stopped. Its four live CI containers were stopped
+  with restart=no; data volumes retained. Local launcher is blocked by
+  ~/.config/trace-it/disabled and trace-pay/AGENTS.md records the stop request.
+
+- User approved the displayed v6 duplicates and requested wider matching on both
+  sources. V7 uses similarity 0.70 and competitor margin 0, retaining the 65 m
+  maximum camera distance, same-date restriction, local-feature thresholds and
+  all-pairs group checks. All v6 groups remain together.
+
+- Mateo chose 10 m sampling, all existing categories, and inference optimization.
+  Preserve all old predictions, reuse compatible selected views, cache constant text
+  embeddings, and transfer postprocessed tensors to CPU once per prompt. The old
+  6 m run stopped cleanly with 6,143 completed views; 3,237 overlap the new selection.
+
+- User explicitly approved increasing the duplicate search to 100 m after finding
+  displayed v7 groups correct. This supersedes the earlier 65 m preference. V8
+  also lowers similarity from 0.70 to 0.60, retaining a zero competitor margin,
+  same-date requirement, local-feature thresholds and all-pairs group consistency.
+  Preserve v7 groups and save a separate review; sample feedback is not a measured
+  precision estimate.
+
+- User reports all 161 v8 review examples are correct and requests more widening.
+  V9 keeps 100 m / 0.60 similarity / zero competitor margin, and relaxes local
+  inlier ratio from 0.85 to 0.80 and coverage from 0.35 to 0.25 on both crops.
+  Minimum 20 inliers, descriptor ratio 0.65, RANSAC 2.5 px, same-date and all-pairs
+  checks remain. Reevaluate saved local evidence, preserve every v8 group.
+
+- User again reports the displayed duplicate examples look correct and asks to
+  widen further. V10 preserves v9 groups and keeps 100 m / 0.60 similarity / zero
+  competitor margin, lowering local agreement to 0.75 and coverage to 0.20.
+  All other geometric and all-pairs checks remain. Feedback is qualitative.
+- User requested graffiti examples. `explore/graffiti_review.py` builds 60 saved
+  examples from the active multicategory run, with crops, boxed street context,
+  exact prompts, scores, local browser labels and JSON export. Per prompt, sample
+  10 random, 10 low-score and 10 high-score proposals across distinct panoramas.
+  Exclude within-view duplicate proposals. These are unclassified SAM proposals.
+
+- User says v10 review examples still look correct; v11 lowers local feature
+  agreement from 0.75 to 0.70 and per-crop coverage from 0.20 to 0.15. Preserve
+  every v10 group; keep 100 m, DINO 0.60, 20 inliers, same-date and all-pairs checks.
+  This is sample approval, not measured precision.
+- Graffiti review intentionally selected one proposal per panorama. Of its 60
+  sampled views, 48 contain multiple unflagged graffiti proposals; the first has
+  8, plus 1 flagged overlap. No one-object detection cap is imposed by our loop.
+  `graffiti_scene_review.py` displays all unflagged proposals in 12 selected scenes
+  to inspect omissions and cases where one box covers multiple marks. Current
+  SAM threshold is 0.5 and minimum detection width/height is 32 pixels.
+
+- User reports v11 duplicate examples still look correct and requests further
+  widening. V12 lowers local agreement to 0.65 and coverage to 0.10, preserving
+  v11 groups. Keep 100 m, similarity 0.60, minimum 20 inliers and all-pairs checks.
+  Review sample feedback does not establish full-dataset precision.
+- User approves graffiti results and requests object-type layers in the main
+  frontend, with subagents. Show per-category detections and inspection controls;
+  distinguish SAM proposals at camera coordinates from verified object locations.
+
+- Object-layer snapshot published from 36,480 completed views: 323,846 raw SAM
+  proposals, 299,223 after omitting within-view duplicate flags in the UI. Default
+  graffiti + street names = 38,389 observations. Independent validation checked
+  every exported ID, coordinate, crop link and count; sampled crop URLs return 200.
+  Layers use camera coordinates, remain unclassified/cross-view undeduplicated,
+  and are a manual snapshot. SAM service continues unchanged.
+
+- User reports v12 duplicate examples still correct and asks whether 50% local
+  feature agreement is enough. V13 tests exactly 0.50, retaining 0.10 coverage,
+  20 inliers, 100 m, 0.60 similarity and all-pairs checks. Preserve every v12 group.
+  Output: Apple 17,667 / GSV 1,791 duplicate groups. Review: 150 new/expanded groups,
+  649 crops. Sample feedback still does not establish full-dataset precision.
+- User noticed no full-image button on graffiti. Initial layer export set raw to
+  null. Add per-view context URL and normalized boxes, with a lazy CPU JPEG cache
+  behind Caddy. No bulk HEIC conversion or GPU changes. Same context serves all
+  categories from a view; originals and masks remain unchanged.
+
+- User authorized all four downstream tasks with subagents: category evaluation,
+  new-category duplicate review, OCR/search and scheduled map refreshes. Category
+  pilot freezes 96 crops and preserves the original 43 human labels. Intern2
+  predictions stay separate; no accuracy without new human labels. A contact
+  sheet shows many street-name proposals are actually traffic/shop signs, and
+  the classifier itself has some errors. Do not auto-override map categories.
+- New-category dedupe exposed different parking signs sharing an emblem and
+  identical sign designs on different buildings. Crop checks alone cannot
+  establish physical identity. Add background scene alignment before accepting
+  new-category groups. Keep failed pilot versions for audit; don't seed their
+  groups or collapse them in the frontend.
+- CPU OCR Latin PP-OCRv5 pilot: 200 balanced crops, 149 nonempty results, around
+  98 seconds. Chinese/English baseline quarantined, not exported. Enabled bounded
+  OCR timer (1,000/15 minutes) and layer snapshot timer (every 15 minutes). OCR is
+  draft text, not verified transcription. No GPU work beyond the completed
+  96-crop Intern2 evaluation; SAM continues.
+- Map updates are atomic, skip unchanged inputs, retain at least 24 hours/eight
+  snapshots, and include OCR text. Browser polls every minute, offers explicit
+  update, preserves map/layers/search and old data if refresh fails. Capture dates
+  are separate from snapshot publication time. Actual accent-insensitive search
+  for 'ramon del cueto' found three street-plate observations.
+- New-category v3 finished with 17 groups (8 graffiti, 9 street-name proposals),
+  35 grouped observations. Both known false merges fail the new gates. All
+  52,942 snapshot observations are preserved. Full-scene spot checks found
+  matching physical objects whose category proposals are still wrong; keep
+  classification and object identity as separate review questions. Five dedupe
+  tests and review browser checks passed. No frontend group collapse applied.
+
+- User reports new category reviews and duplicate groups look correct. Saved
+  category labels confirm 24/24 classifier agreement, across nine human category
+  labels but only one street-name plate; this is a reviewed subset, not a citywide
+  accuracy estimate. Duplicate feedback is qualitative, not per-case server data.
+- At 19:31 on Oct12, SAM completed41,987/71,752 views at1.91views/s, slowest-worker
+  ETA23:57. GPU100%, ~15GBused; CPU85%idle. OCR batch1000 took415.5seconds but the
+  15-minute timer left about8minutes idle. Changed OCR timer to30seconds after
+  each bounded batch, preserving locking/resume and CPU-only inference. Map export
+  remains every15minutes. Expected OCR throughput roughlydouble pending measurement.
+
+- User requested more detail on scaling category classification/deduplication and
+  authorized grouped objects on the map now. Applied latest selected proposals
+  to new map layers: legacy shop v13 by exact reused-crop IDs, multicategory v3 by
+  exact observation IDs. No fuzzy linking or automatic category changes. All raw
+  observations remain in the export. Client defaults to grouped mode, provides
+  a raw toggle and every viewpoint, combines OCR for search, uses representative
+  camera coordinates. Initial shop layer76,383 observations ->68,682 items;
+  5,655 actual multi-view groups present in this snapshot, plus17 newcategorygroups.

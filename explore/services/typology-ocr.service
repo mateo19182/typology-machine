@@ -1,0 +1,11 @@
+[Unit]
+Description=OCR completed street-name and shop-sign crops
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/mateo/projects/typology-machine
+ExecStart=/home/mateo/projects/typology-machine/.venv/bin/python -u explore/ocr_multicategory.py --run data/coruna/apple/multicategory/765844a02f75 --limit 1000
+Environment=OPENBLAS_NUM_THREADS=1
+Environment=OMP_NUM_THREADS=2
+Nice=10
+TimeoutStartSec=1800

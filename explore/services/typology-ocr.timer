@@ -1,0 +1,10 @@
+[Unit]
+Description=Continue bounded Typology OCR batches while crops remain
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=30s
+Unit=typology-ocr.service
+
+[Install]
+WantedBy=timers.target

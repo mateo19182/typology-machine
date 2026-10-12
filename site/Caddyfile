@@ -6,6 +6,7 @@
 http://:8790 {
 	root * /home/mateo/projects/typology-machine/data/coruna/site
 	encode zstd gzip
+	reverse_proxy /proposal-context/* 127.0.0.1:8793
 	file_server
 	@assets path /img/* /ctx/*
 	header @assets Cache-Control "public, max-age=604800"

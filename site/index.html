@@ -46,14 +46,16 @@ body[data-view="map"] .wall, body[data-view="map"] .more, body[data-view="map"] 
 .pin:hover { border-color: var(--fg); z-index: 1000 !important }
 
 .detail { position: fixed; inset: 0; background: rgba(10,11,13,.94); display: none; z-index: 2000; padding: 16px; overflow: auto }
-.detail[open] { display: grid; grid-template-rows: auto 1fr auto }
+.detail[open] { display: grid; grid-template-rows: auto 1fr auto auto }
 .detail .top { display: flex; justify-content: space-between; gap: 16px; align-items: baseline }
 .detail figure { margin: 0; display: grid; place-items: center; min-height: 0 }
+.detail .pic.is-loading { min-width:240px; min-height:120px; }.detail .pic.is-loading .box { display:none; }
+.detail .pic #image-status { position:absolute; inset:0; display:grid; place-items:center; background:#111d; color:#eee; font-size:12px; line-height:1.5; padding:20px; text-align:center; }.detail .pic #image-status:empty { display:none; }
 .detail .pic { position: relative; display: inline-block; line-height: 0 }
 .detail .pic img { max-width: min(100%, 980px); max-height: 62vh; display: block }
 .detail .pic .box { position: absolute; border: 1.5px solid var(--amber); box-shadow: 0 0 0 1px rgba(0,0,0,.5); pointer-events: none; display: none }
 .detail[data-full] .pic .box { display: block }
-.detail .info { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 24px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--dim) }
+.detail .info { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 24px; padding-top: 12px; border-top: 1px solid var(--line); color: #aaa59b }
 .detail .info .t { color: var(--fg); font-size: 16px; min-width: 0; overflow-wrap: anywhere }
 .detail .info .meta { display: flex; flex-wrap: wrap; gap: 4px 18px }
 .detail .info a { color: var(--amber); text-decoration: none }
@@ -61,6 +63,20 @@ body[data-view="map"] .wall, body[data-view="map"] .more, body[data-view="map"] 
 
 footer { padding: 28px 16px; color: var(--dim); display: flex; flex-wrap: wrap; gap: 6px 28px; border-top: 1px solid var(--line); flex: none }
 @media (max-width: 520px) { .wall { grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)) } }
+
+.object-layers { position: absolute; z-index: 800; right: 14px; top: 76px; width: 295px; max-height: calc(100dvh - 180px); overflow: auto; border: 1px solid #37383c; border-radius: 8px; background: rgba(15,17,20,.96); box-shadow: 0 4px 24px #0006; }
+.object-layers summary { cursor: pointer; padding: 12px 14px; color: var(--fg); font-size: 13px; }
+.layer-search { display:grid; gap:7px; padding:0 14px 12px; }.layer-search label,.layer-search span { font-size:10px; color:#aaa59b; }.layer-search input { width:100%; padding:8px; border:1px solid #444; border-radius:4px; color:var(--fg); background:var(--bg); font:inherit; }.layer-search button,.snapshot-update button { font:inherit; padding:5px 8px; border:1px solid #555; border-radius:4px; color:var(--amber); background:var(--tile); cursor:pointer; }.snapshot-update { padding:0 14px; }.snapshot-update button { margin-bottom:10px; }.snapshot-update span { font-size:10px; color:#aaa59b; }.snapshot-update button[hidden] { display:none; }
+.layer-heading { display: flex; justify-content: space-between; padding: 0 14px 8px; color: #a8a49b; }
+.layer-heading button { color: var(--amber); font: inherit; background: none; border: 0; cursor: pointer; }
+.layer-option { display: grid; grid-template-columns: 16px 9px 1fr auto; align-items: center; gap: 8px; padding: 6px 12px; cursor: pointer; }
+.layer-option:hover { background: #ffffff08; }.layer-option input { margin: 0; accent-color: var(--amber); }.layer-option small { color: #aaa59b; font-size: 10px; }.swatch { width: 8px; height: 8px; border-radius: 50%; }
+.object-layers p { color: #a8a49b; font-size: 10px; line-height: 1.6; margin: 10px 14px; }.object-layers #layer-error { color: #eeb785; }.object-layers p:empty { display: none; }
+.nearby { display:flex; gap:6px; overflow-x:auto; padding:10px 0; max-width:100%; }.nearby[hidden] { display:none; }.nearby .nearby-item { flex:none; width:72px; height:65px; padding:3px; border:1px solid; border-radius:3px; opacity:.55; }.nearby .nearby-item[aria-pressed="true"] { opacity:1; background:#ffffff18; }.nearby img { width:100%; height:100%; object-fit:contain; }
+.observation-canvas { pointer-events: none; }.detail button:disabled { opacity: .3; cursor: default; }
+#map-status { position: absolute; bottom: 24px; left: 12px; z-index: 700; padding: 5px 8px; background: #101216db; color: #ccc6bb; font-size: 10px; pointer-events: none; max-width: calc(100vw - 24px); }
+body[data-view="wall"] #map-status { display: none; }body[data-view="wall"] .object-layers { flex: none; position: relative; top: auto; right: auto; width: auto; margin: 10px; max-height: none; }body[data-view="wall"] #layer-options { display: grid; grid-template-columns: repeat(auto-fit,minmax(245px,1fr)); }
+@media(max-width:600px){ header .mast { white-space:normal; font-size:10px; letter-spacing:.1em; } .object-layers { top: 90px; right: 8px; width: 250px; max-height: 45dvh; }.detail .top { flex-wrap: wrap; gap: 8px; }.detail .arrows { gap: 12px; flex-wrap: wrap; }.detail .pic img { max-height: 52vh; }.cluster-controls { font-size: 10px; } }
 </style>
 </head>
 <body data-view="map">
@@ -79,8 +95,16 @@ footer { padding: 28px 16px; color: var(--dim); display: flex; flex-wrap: wrap; 
   <span id="cluster-coverage"></span>
 </div>
 
-<div id="map"></div>
-<main class="wall" id="wall" aria-label="Signs"></main>
+<details class="object-layers" id="object-layers" open>
+  <summary id="layer-summary">Object layers</summary>
+  <label class="group-control" style="display:block;padding:0 14px 12px"><input id="group-duplicates" type="checkbox" checked> Group duplicate observations</label><div class="layer-search"><label for="object-search">Search text in selected layers</label><input id="object-search" type="search" placeholder="Street or shop name…"><button id="focus-results">Show results on map</button><span id="search-note">OCR coverage is partial; text may contain errors.</span></div>
+  <div class="snapshot-update"><button id="snapshot-update" hidden>New data available · Update</button><span id="update-status" role="status"></span></div>
+  <div class="layer-heading"><span>Show on map &amp; wall</span><button id="layers-none">Clear</button></div>
+  <div id="layer-options"></div>
+  <p id="layer-note">Loading object layers…</p><p id="layer-error" role="status"></p>
+</details>
+<div id="map"></div><div id="map-status" aria-live="polite"></div>
+<main class="wall" id="wall" aria-label="Objects"></main>
 <div class="more" id="more"></div>
 
 <footer>
@@ -90,19 +114,20 @@ footer { padding: 28px 16px; color: var(--dim); display: flex; flex-wrap: wrap; 
   <span>DINOv2</span>
 </footer>
 
-<div class="detail" id="detail" role="dialog" aria-modal="true" aria-label="Sign">
+<div class="detail" id="detail" role="dialog" aria-modal="true" aria-label="Object details">
   <div class="top">
     <div class="mast" id="d-id"></div>
     <div class="arrows"><button id="full" aria-pressed="false">full image</button><button id="prev">← prev</button><button id="next">next →</button><button id="close">close ✕</button></div>
   </div>
-  <figure><div class="pic"><img id="d-img" alt=""><div class="box" id="d-box"></div></div></figure>
+  <figure><div class="pic"><img id="d-img" alt=""><span id="image-status" role="status"></span><div class="box" id="d-box"></div></div></figure>
+  <div id="viewpoints" class="nearby" aria-label="Viewpoints of this object" hidden></div><p id="group-text" style="white-space:pre-line" hidden></p><div id="nearby" class="nearby" aria-label="Observations at this location"></div>
   <div class="info">
     <div class="t" id="d-text"></div>
     <div class="meta">
       <span id="d-where"></span>
       <span id="d-date"></span>
       <span id="d-seen"></span>
-      <span id="d-cluster"></span>
+      <span id="d-cluster"></span><span id="d-ocr"></span>
       <a id="d-map" href="#">map</a>
       <a id="d-link" target="_blank" rel="noopener"></a>
     </div>
@@ -112,124 +137,156 @@ footer { padding: 28px 16px; color: var(--dim); display: flex; flex-wrap: wrap; 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 (async function () {
-  const $ = id => document.getElementById(id);
-  const wall = $('wall');
-  const { meta, signs } = await fetch('data.json').then(r => r.json());
-  const clusters = new Map((meta.clustering?.clusters || []).map(c => [c.id, c]));
-  let colorClusters = false, clusterFilter = '', refreshMap = () => {};
-  const matches = s => !clusterFilter || (clusterFilter === 'unassigned' ? !s.cluster_id : s.cluster_id === clusterFilter);
-  const signColor = s => colorClusters ? (s.cluster_color || '#55585d') : '#d79a3a';
-  if (clusters.size) {
-    $('cluster-controls').hidden = false;
-    for (const c of clusters.values()) { const o = document.createElement('option'); o.value = c.id; o.textContent = `${c.label} · ${c.name}`; $('cluster-filter').appendChild(o); }
-    $('cluster-coverage').textContent = `${signs.filter(s => s.cluster_id).length.toLocaleString()} / ${signs.length.toLocaleString()} signs assigned; gray = not clustered or noise`;
+  const $ = id => document.getElementById(id), wall = $('wall');
+  if (matchMedia('(max-width:600px)').matches) $('object-layers').open=false;
+  let map, refreshMap = () => {}, order = [], shown = 0, cur = -1, curSign, curObject, full = false;
+  let colorClusters = false, clusterFilter = '', searchQuery = '', active = [], browse = [], manifest, availableManifest;
+  const normalize = value => String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+  const loaded = new Map(), enabled = new Set(['legacy']), pending = new Map();
+  const legacy = await fetch('data.json').then(r => { if (!r.ok) throw Error('Could not load signs'); return r.json(); });
+  const signs = legacy.signs.map(s => ({...s, category:'legacy', crop:`img/${s.id}.jpg`, raw:s.ctx ? `ctx/${s.id}.jpg` : null}));
+  const clusters = new Map((legacy.meta.clustering?.clusters || []).map(c => [c.id,c]));
+  const categories = new Map([['legacy', {id:'legacy',label:'Signs · existing collection',color:'#d79a3a',count:signs.length}]]);
+  loaded.set('legacy', signs);
+  const matches = s => (s.category !== 'legacy' || !clusterFilter || (clusterFilter === 'unassigned' ? !s.cluster_id : s.cluster_id === clusterFilter)) && (!searchQuery || normalize([s.search_text,s.text,s.t,s.b,s.st].filter(Boolean).join(' ')).includes(searchQuery));
+  const color = s => colorClusters && s.category === 'legacy' ? s.cluster_color || '#55585d' : categories.get(s.category)?.color || '#ddd';
+  const label = s => categories.get(s.category)?.label || s.category;
+  const grouped = () => $('group-duplicates').checked;
+  const layerCount = c => grouped() ? (c.object_count ?? c.count-(c.same_view_duplicate_flags||0)) : c.count-(c.same_view_duplicate_flags||0);
+  $('group-duplicates').onchange=()=>updateSelection();
+  function groupObservations(rows){
+    const groups=new Map();
+    for(const row of rows){const id=row.duplicate_group||row.id;if(!groups.has(id))groups.set(id,[]);groups.get(id).push(row);}
+    return [...groups.entries()].map(([id,views])=>{
+      views.sort((a,b)=>Number(b.id===b.group_rep)-Number(a.id===a.group_rep) || (b.score||0)*Math.sqrt(b.w*b.h)-(a.score||0)*Math.sqrt(a.w*a.h) || a.id.localeCompare(b.id));
+      const texts=[...new Set(views.map(v=>(v.text||'').trim()).filter(Boolean))];
+      return {...views[0],object_id:id,views,search_text:texts.join('\n'),group_text:texts.join('\n')};
+    });
   }
-  let order = signs.map((_, i) => i), cur = -1, shown = 0;
-  const CHUNK = 300;
-  $('count').textContent = `${meta.n.toLocaleString('en')} signs`;
-
-  // ---- wall, rendered in chunks as you scroll
-  function tile(idx) {
-    const s = signs[idx];
-    const b = document.createElement('button');
-    b.className = 'tile'; b.dataset.i = idx;
-    if (colorClusters) b.style.borderBottom = `3px solid ${signColor(s)}`;
-    b.setAttribute('aria-label', s.t || s.b || 'sign');
-    b.innerHTML = `<img loading="lazy" src="img/${s.id}.jpg" width="${s.w}" height="${s.h}" alt="">`;
-    b.addEventListener('click', () => open(s));
-    return b;
+  let searchTimer;
+  $('object-search').oninput=()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>{searchQuery=normalize($('object-search').value.trim());updateSelection();},150);};
+  $('focus-results').onclick=()=>{if(!active.length)return;setView('map');map.fitBounds(L.latLngBounds(active.map(s=>[s.la,s.lo])),{padding:[30,30],maxZoom:18});};
+  function snapshotNote(){ $('layer-note').textContent=`SAM detections · ${Number(manifest.completed_views).toLocaleString()} street views · snapshot updated ${new Date(manifest.published_at||manifest.snapshot_at).toLocaleString()}. Grouping is partial. Dots use the representative camera location; nearby items share a display dot.`; }
+  $('snapshot-update').onclick=async()=>{
+    if(!availableManifest || detail.hasAttribute('open'))return;
+    const button=$('snapshot-update');button.disabled=true;$('update-status').textContent='Updating selected layers…';
+    const next=availableManifest, selected=[...enabled];
+    document.querySelectorAll('.layer-option input').forEach(input=>input.disabled=true);$('layers-none').disabled=true;
+    try {
+      const staged=await Promise.all(next.categories.filter(c=>selected.includes(c.id)).map(async c=>{
+        const response=await fetch(c.url);if(!response.ok)throw Error('Layer unavailable');
+        return [c.id,parseLayer(c,await response.json())];
+      }));
+      // Commit only after every selected layer succeeds; failed updates retain all old data.
+      manifest=next;for(const c of manifest.categories){const existing=categories.get(c.id);if(existing)Object.assign(existing,c);else{categories.set(c.id,c);addLayer(c);}loaded.delete(c.id);pending.delete(c.id);document.querySelector(`[data-category-count="${c.id}"]`).textContent=layerCount(c).toLocaleString();}
+      for(const [id,items] of staged)loaded.set(id,items);
+      if(availableManifest?.snapshot_id===next.snapshot_id)availableManifest=null;
+      snapshotNote();updateSelection();button.hidden=!availableManifest;$('update-status').textContent='';
+    }catch(error){$('update-status').textContent='Update failed. Your current data is unchanged; try again.';}
+    finally{button.disabled=false;document.querySelectorAll('.layer-option input').forEach(input=>input.disabled=false);$('layers-none').disabled=false;}
+  };
+  setInterval(async()=>{try{const next=await fetch('layers/manifest.json',{cache:'no-store'}).then(r=>{if(!r.ok)throw Error();return r.json();});if(manifest&&next.snapshot_id!==manifest.snapshot_id){availableManifest=next;$('snapshot-update').hidden=false;}}catch(error){/* Keep current snapshot usable while offline. */}},60000);
+  function updateSelection() {
+    active = [...enabled].flatMap(id => {const rows=loaded.get(id)||[];return grouped() ? rows.objects||rows : rows;}).filter(matches);
+    for(const c of categories.values()){const count=document.querySelector(`[data-category-count="${c.id}"]`);if(count&&!pending.has(c.id))count.textContent=layerCount(c).toLocaleString();}
+    order = active.slice(); browse = order; cur = -1;
+    $('count').textContent = `${active.length.toLocaleString()} ${searchQuery?'matches':grouped()?'items':'observations'}${grouped()?' · '+active.reduce((n,s)=>n+(s.views?.length||1),0).toLocaleString()+' observations':''}`;
+    $('focus-results').disabled=!active.length;
+    $('search-note').textContent=searchQuery?`${active.length.toLocaleString()} matches in selected layers. OCR coverage is partial.`:'OCR coverage is partial; text may contain errors.';
+    $('layer-summary').textContent = `Object layers · ${enabled.size} on`;
+    $('cluster-controls').hidden = !enabled.has('legacy') || !clusters.size;
+    render(); refreshMap();
   }
-  function more() { const end = Math.min(order.length, shown + CHUNK); for (let k = shown; k < end; k++) wall.appendChild(tile(order[k])); shown = end; }
-  function render() { wall.innerHTML = ''; shown = 0; more(); }
-  new IntersectionObserver(es => { if (es[0].isIntersecting && shown < order.length) more(); }, { rootMargin: '1200px' }).observe($('more'));
-  $('shuffle').addEventListener('click', () => { for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; } render(); setView('wall'); });
-  $('cluster-colors').onchange = () => { colorClusters = $('cluster-colors').checked; render(); refreshMap(); };
-  $('cluster-filter').onchange = () => { clusterFilter = $('cluster-filter').value; order = signs.map((_, i) => i).filter(i => matches(signs[i])); $('count').textContent = `${order.length.toLocaleString('en')} signs`; cur = -1; render(); refreshMap(); };
-
-  // ---- map: satellite imagery; dots when far out, the signs themselves once close enough
-  const PIN_ZOOM = 17, PIN_H = 36;
-  let map = null, dotLayer = null, pinLayer = null;
-  function setView(v) {
-    document.body.dataset.view = v;
-    $('v-map').setAttribute('aria-pressed', String(v === 'map'));
-    $('v-wall').setAttribute('aria-pressed', String(v === 'wall'));
-    if (v === 'map') { if (!map) buildMap(); else map.invalidateSize(); }
+  function parseLayer(c,data){const rows=data.features.filter(f=>!f.properties.duplicate_of).map(f=>{const p=f.properties;return {...p,category:c.id,la:f.geometry.coordinates[1],lo:f.geometry.coordinates[0],w:p.width,h:p.height,d:p.date,u:p.provider_url,src:p.source==='gsv'?'g':'a',proposal:true};});rows.objects=groupObservations(rows);return rows;}
+  function addLayer(c) {
+    const row = document.createElement('label'); row.className='layer-option';
+    const input = document.createElement('input'); input.type='checkbox'; input.checked=enabled.has(c.id); input.dataset.category=c.id;
+    const swatch=document.createElement('span'); swatch.className='swatch'; swatch.style.background=c.color;
+    const name=document.createElement('span'); name.textContent=c.label;
+    const count=document.createElement('small'); count.textContent=layerCount(c).toLocaleString();count.dataset.categoryCount=c.id;
+    row.append(input,swatch,name,count); $('layer-options').append(row);
+    input.onchange=async () => {
+      const generation=manifest?.snapshot_id;
+      if (!input.checked) { enabled.delete(c.id); updateSelection(); return; }
+      enabled.add(c.id); updateSelection();
+      if (loaded.has(c.id)) return;
+      count.textContent='loading…'; row.setAttribute('aria-busy','true');
+      try {
+        if (!pending.has(c.id)) pending.set(c.id, fetch(c.url).then(r => { if (!r.ok) throw Error('Layer unavailable'); return r.json(); }).then(data => parseLayer(c,data)));        const items=await pending.get(c.id);if(generation!==manifest?.snapshot_id)return;loaded.set(c.id,items); pending.delete(c.id);count.textContent=layerCount(c).toLocaleString();
+        $('layer-error').textContent=''; updateSelection();
+      } catch (error) { pending.delete(c.id); enabled.delete(c.id); input.checked=false; count.textContent='retry'; $('layer-error').textContent=`Could not load ${c.label}. Select it to retry.`; updateSelection(); }
+      finally { row.removeAttribute('aria-busy'); }
+    };
   }
-  $('v-map').addEventListener('click', () => setView('map'));
-  $('v-wall').addEventListener('click', () => setView('wall'));
-  function buildMap() {
-    map = L.map('map', { preferCanvas: true, zoomControl: true }).setView([43.3665, -8.4065], 15);
-    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20, maxNativeZoom: 19,
-      attribution: 'Imagery &copy; Esri, Maxar, Earthstar Geographics' }).addTo(map);
-    const canvas = L.canvas({ padding: 0.5 });
-    const radius = z => z < 13 ? 1.2 : z < 15 ? 2 : 3.5;
-    const colour = s => s.src === 'g' ? '#7fb3d5' : '#d79a3a';
-    const dots = signs.map(s => L.circleMarker([s.la, s.lo], { renderer: canvas, radius: radius(15), stroke: false, fillColor: colour(s), fillOpacity: 0.9 })
-      .on('click', () => map.setView([s.la, s.lo], PIN_ZOOM)));
-    dotLayer = L.layerGroup(dots);
-    pinLayer = L.layerGroup();
-    function refresh() {
-      const z = map.getZoom();
-      if (z < PIN_ZOOM) {
-        if (map.hasLayer(pinLayer)) map.removeLayer(pinLayer);
-        if (!map.hasLayer(dotLayer)) dotLayer.addTo(map);
-        const r = radius(z); dotLayer.clearLayers(); dots.forEach((d, i) => { d.setRadius(r); d.setStyle({ fillColor: signColor(signs[i]) }); if (matches(signs[i])) dotLayer.addLayer(d); });
-        return;
-      }
-      if (map.hasLayer(dotLayer)) map.removeLayer(dotLayer);
-      pinLayer.clearLayers();
-      const b = map.getBounds().pad(0.2);
-      const h = z >= 19 ? PIN_H * 1.6 : PIN_H;
-      for (const s of signs) {
-        if (!matches(s)) continue;
-        if (!b.contains([s.la, s.lo])) continue;
-        const w = Math.round(h * s.w / s.h);
-        const icon = L.divIcon({ className: 'pin', html: `<img style="border-bottom:3px solid ${signColor(s)}" src="img/${s.id}.jpg" alt="">`, iconSize: [w + 4, h + 4], iconAnchor: [(w + 4) / 2, (h + 4) / 2] });
-        L.marker([s.la, s.lo], { icon, title: s.t || s.b || s.st || '' }).on('click', () => open(s)).addTo(pinLayer);
-      }
-      if (!map.hasLayer(pinLayer)) pinLayer.addTo(map);
-    }
-    map.on('zoomend moveend', refresh);
-    refreshMap = refresh;
-    refresh();
-  }
-
-  // ---- detail
-  const detail = $('detail');
-  let full = false, curSign = null;
-  function showPic() {
-    const s = curSign, on = full && s.ctx;
-    $('d-img').src = on ? `ctx/${s.id}.jpg` : `img/${s.id}.jpg`;
-    if (on) { const [x0, y0, x1, y1] = s.bx; Object.assign($('d-box').style, { left: x0 * 100 + '%', top: y0 * 100 + '%', width: (x1 - x0) * 100 + '%', height: (y1 - y0) * 100 + '%' }); detail.dataset.full = '1'; }
-    else delete detail.dataset.full;
-    $('full').setAttribute('aria-pressed', String(on)); $('full').hidden = !s.ctx;
-  }
-  $('full').addEventListener('click', () => { full = !full; showPic(); });
-  function open(s) {
-    cur = order.indexOf(signs.indexOf(s)); curSign = s;
-    showPic();
-    $('d-text').textContent = s.t || s.b || '';
-    $('d-id').textContent = s.id;
-    $('d-where').textContent = [s.st, s.ba].filter(Boolean).join(' · ');
-    $('d-date').textContent = s.d;
-    $('d-seen').textContent = `${s.seen} views`;
-    $('d-cluster').textContent = clusters.get(s.cluster_id)?.name || (clusters.size ? 'Not clustered' : '');
-    $('d-link').href = s.u; $('d-link').textContent = s.src === 'g' ? 'Street View ↗' : 'Look Around ↗';
-    $('d-map').onclick = e => { e.preventDefault(); close(); setView('map'); map.setView([s.la, s.lo], 18); };
-    detail.setAttribute('open', ''); $('close').focus();
-  }
-  function close() { detail.removeAttribute('open'); }
-  function step(d) { if (cur < 0) return; open(signs[order[(cur + d + order.length) % order.length]]); }
-  $('close').addEventListener('click', close);
-  $('prev').addEventListener('click', () => step(-1));
-  $('next').addEventListener('click', () => step(1));
-  detail.addEventListener('click', e => { if (e.target === detail) close(); });
-  document.addEventListener('keydown', e => {
-    if (detail.hasAttribute('open')) { if (e.key === 'Escape') close(); if (e.key === 'ArrowRight') step(1); if (e.key === 'ArrowLeft') step(-1); if (e.key === 'f') { full = !full; showPic(); } }
+  addLayer(categories.get('legacy'));
+  $('layers-none').onclick=() => { enabled.clear(); document.querySelectorAll('.layer-option input').forEach(i=>i.checked=false); updateSelection(); };
+  for (const c of clusters.values()) { const o=document.createElement('option'); o.value=c.id;o.textContent=`${c.label} · ${c.name}`; $('cluster-filter').append(o); }
+  $('cluster-coverage').textContent='Cluster colors apply to the existing signs collection';
+  $('cluster-colors').onchange=()=>{colorClusters=$('cluster-colors').checked;render();refreshMap();};
+  $('cluster-filter').onchange=()=>{clusterFilter=$('cluster-filter').value;updateSelection();};
+  function more() { const end=Math.min(order.length,shown+180); for (;shown<end;shown++) {
+    const s=order[shown], b=document.createElement('button');b.className='tile';b.dataset.objectId=s.object_id||s.id;b.dataset.views=s.views?.length||1;b.style.borderBottom=`3px solid ${color(s)}`;b.setAttribute('aria-label',s.t||label(s));
+    const img=document.createElement('img');img.loading='lazy';img.src=s.crop;img.alt='';b.append(img);b.onclick=()=>{browse=order;open(s);};wall.append(b);
+  }}
+  function render(){wall.replaceChildren();shown=0;more();}
+  new IntersectionObserver(es=>{if(es[0].isIntersecting&&shown<order.length)more();},{rootMargin:'600px'}).observe($('more'));
+  $('shuffle').onclick=()=>{for(let i=order.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[order[i],order[j]]=[order[j],order[i]];}render();setView('wall');};
+  function setView(v){document.body.dataset.view=v;$('v-map').setAttribute('aria-pressed',String(v==='map'));$('v-wall').setAttribute('aria-pressed',String(v==='wall'));if(v==='map')map.invalidateSize();}
+  $('v-map').onclick=()=>setView('map');$('v-wall').onclick=()=>setView('wall');
+  map=L.map('map',{zoomControl:true}).setView([43.3665,-8.4065],15);
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:20,maxNativeZoom:19,attribution:'Imagery &copy; Esri, Maxar, Earthstar Geographics'}).addTo(map);
+  // A single canvas keeps large proposal layers out of the DOM. Nearby points aggregate
+  // on screen; these are display bundles, never claims about duplicate objects.
+  const ObservationCanvas=L.Layer.extend({
+    onAdd(m){this.canvas=L.DomUtil.create('canvas','observation-canvas');m.getPane('overlayPane').append(this.canvas);this.groups=[];m.on('moveend zoomend resize',this.draw,this);m.on('click',this.click,this);this.draw();},
+    onRemove(m){m.off('moveend zoomend resize',this.draw,this);m.off('click',this.click,this);this.canvas.remove();},
+    draw(){const size=map.getSize(),dpr=window.devicePixelRatio||1,c=this.canvas;c.width=size.x*dpr;c.height=size.y*dpr;c.style.width=size.x+'px';c.style.height=size.y+'px';L.DomUtil.setPosition(c,map.containerPointToLayerPoint([0,0]));const ctx=c.getContext('2d');ctx.scale(dpr,dpr);const cells=new Map(),bounds=map.getBounds(),cell=map.getZoom()<17?14:8;
+      for(const s of active){if(!bounds.contains([s.la,s.lo]))continue;const p=map.latLngToContainerPoint([s.la,s.lo]),key=`${Math.floor(p.x/cell)}:${Math.floor(p.y/cell)}`;let g=cells.get(key);if(!g){g={x:p.x,y:p.y,items:[]};cells.set(key,g);}g.items.push(s);}
+      this.groups=[...cells.values()];for(const g of this.groups){const colors=[...new Set(g.items.map(color))],r=map.getZoom()<17?Math.min(6,2+Math.log2(g.items.length)):g.items.length>1?Math.min(11,5+Math.log2(g.items.length)):4;g.r=r;colors.forEach((col,i)=>{ctx.beginPath();ctx.moveTo(g.x,g.y);ctx.arc(g.x,g.y,r,i/colors.length*Math.PI*2,(i+1)/colors.length*Math.PI*2);ctx.closePath();ctx.fillStyle=col;ctx.fill();});ctx.strokeStyle='#141519';ctx.lineWidth=1;ctx.beginPath();ctx.arc(g.x,g.y,r,0,Math.PI*2);ctx.stroke();if(g.items.length>1&&map.getZoom()>=17){ctx.fillStyle='#fff';ctx.font='bold 10px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(g.items.length>99?'99+':String(g.items.length),g.x,g.y);}}
+      $('map-status').textContent=`${this.groups.reduce((n,g)=>n+g.items.length,0).toLocaleString()} ${grouped()?'items':'observations'} in view · click a dot to inspect`;
+    },
+    click(e){const p=e.containerPoint;let best=null,dist=Infinity;for(const g of this.groups){const d=Math.hypot(g.x-p.x,g.y-p.y);if(d<g.r+7&&d<dist){best=g;dist=d;}}if(best){browse=best.items;open(best.items[0]);}}
   });
-
-  render();
-  setView('map');
+  const observations=new ObservationCanvas().addTo(map);refreshMap=()=>observations.draw();
+  const detail=$('detail');
+  function showPic(){
+    const s=curSign,on=!!(full&&s.raw),img=$('d-img'),status=$('image-status');
+    status.textContent=on?'Loading street image…':'';img.parentElement.classList.toggle('is-loading',on);
+    img.onload=()=>{status.textContent='';img.parentElement.classList.remove('is-loading');};
+    img.onerror=()=>{img.parentElement.classList.add('is-loading');status.textContent=on?'Street image could not load. Switch to crop, then try again.':'Image could not load.';delete detail.dataset.full;};
+    img.style.width=on?'':Math.min(800,innerWidth-32,innerHeight*.52*(s.w/s.h||1))+'px';
+    img.src=on?s.raw:s.crop;img.alt=on?`Street image containing ${label(s)}`:s.t||label(s);
+    if(on&&s.bx){const[x0,y0,x1,y1]=s.bx;Object.assign($('d-box').style,{left:x0*100+'%',top:y0*100+'%',width:(x1-x0)*100+'%',height:(y1-y0)*100+'%'});detail.dataset.full='1';}else delete detail.dataset.full;
+    $('full').setAttribute('aria-pressed',String(on));$('full').textContent=on?'show crop':'full image';$('full').hidden=!s.raw;
+  }
+  $('full').onclick=()=>{full=!full;showPic();};
+  function open(object,view){
+    curObject=object;curSign=view||object;const s=curSign;cur=browse.indexOf(object);showPic();
+    const views=object.views||[object],viewIndex=views.findIndex(v=>v.id===s.id);
+    $('d-text').textContent=s.text||s.t||s.b||label(s);
+    $('d-id').textContent=`${label(s)} · ${cur+1} / ${browse.length}${views.length>1?' · viewpoint '+(viewIndex+1)+' / '+views.length:''}`;
+    $('d-where').textContent=s.proposal?'Camera location · detected category, not yet verified':[s.st,s.ba].filter(Boolean).join(' · ');
+    $('d-date').textContent=s.d?`Captured ${s.d.includes('T')?new Date(s.d).toLocaleDateString():s.d}`:'';
+    $('d-seen').textContent=s.proposal?`Prompt: “${s.prompt}” · score ${Number(s.score).toFixed(2)}`:`${s.seen} views`;
+    $('d-ocr').textContent=s.text?'OCR · automatic transcription':'';$('d-ocr').title=s.ocr_model||'';
+    $('d-cluster').textContent=s.proposal?(views.length>1?`${views.length} viewpoints grouped as one object`:'No other grouped viewpoint in this snapshot'):clusters.get(s.cluster_id)?.name||'';
+    $('d-link').hidden=!s.u;$('d-link').href=s.u||'#';$('d-link').textContent=s.src==='g'?'Street View ↗':'Look Around ↗';
+    $('prev').disabled=$('next').disabled=browse.length<2;
+    $('d-map').onclick=e=>{e.preventDefault();close();setView('map');map.setView([s.la,s.lo],18);};
+    function thumbnails(target,items,selected,callback){target.replaceChildren();target.hidden=items.length<2;for(const item of items){const b=document.createElement('button');b.className='nearby-item';b.setAttribute('aria-label',`${label(item)} · ${item.id}`);b.setAttribute('aria-pressed',String(item.id===selected.id));b.style.borderColor=color(item);const image=document.createElement('img');image.src=item.crop;image.loading='lazy';image.alt=label(item);b.append(image);b.onclick=()=>callback(item);target.append(b);}}
+    thumbnails($('viewpoints'),views,s,item=>open(object,item));
+    thumbnails($('nearby'),browse===order?[]:browse,object,item=>open(item));
+    $('group-text').hidden=views.length<2||!object.group_text;
+    $('group-text').textContent=object.group_text?'Text across viewpoints (automatic OCR):\n'+object.group_text:'';
+    detail.setAttribute('open','');$('close').focus();
+  }
+  function close(){detail.removeAttribute('open');}
+  function step(d){if(cur<0||!browse.length)return;open(browse[(cur+d+browse.length)%browse.length]);}
+  $('close').onclick=close;$('prev').onclick=()=>step(-1);$('next').onclick=()=>step(1);
+  detail.onclick=e=>{if(e.target===detail)close();};document.addEventListener('keydown',e=>{if(detail.hasAttribute('open')){if(e.key==='Escape')close();if(e.key==='ArrowRight')step(1);if(e.key==='ArrowLeft')step(-1);if(e.key==='f'){full=!full;showPic();}}});
+  updateSelection();
+  try{manifest=await fetch('layers/manifest.json',{cache:'no-store'}).then(r=>{if(!r.ok)throw Error('Layers unavailable');return r.json();});for(const c of manifest.categories){categories.set(c.id,c);addLayer(c);} enabled.clear();document.querySelector('[data-category="legacy"]').checked=false; for(const id of ['graffiti','street_name_plate']){const input=document.querySelector(`[data-category="${id}"]`);if(input){input.checked=true;input.onchange();}} updateSelection();snapshotNote();}
+  catch(error){$('layer-note').textContent='';$('layer-error').textContent='Object layers are unavailable. The existing signs collection is still available.';}
 })();
 </script>
 </body>

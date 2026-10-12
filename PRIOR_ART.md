@@ -1,7 +1,7 @@
 # Prior art (searched 2026-10-11)
 
-Nobody seems to have done the full pipeline: automatic detection, perspective-corrected crops,
-Becher-style grids per object type, sub-type clustering, and city comparison. The pieces exist separately.
+Related projects cover detection, crop collections, classification and mapping. The references
+below are examples, not an exhaustive search or evidence that our combination is unique.
 
 | Project | What it is | How it differs |
 |---|---|---|
@@ -33,3 +33,23 @@ The artist behind all text in nyc. Relevant works:
 - [NYC Street Clock](https://clock.alltext.nyc) (2026): a clock built from 20k+ Street View captures.
 - [Looking for Love (in NYC)](https://vimeo.com/1176785928) (2026): a performance of searching panoramas for "LOVE".
 - [diffused·city](https://diffused.city) (2024): diffusion-model panoramas of real cities.
+
+## Graffiti detection and Walzr projects, checked 2026-10-12
+
+- [Walzr's SF Graffiti](https://walzr.com/sf-graffiti) collects city inspectors' violation photos scraped from the city website. This is a useful presentation and provenance reference, but it does not document a Street View graffiti detector. Its linked CSV includes request IDs, locations, dates and an AI beauty score; no detection boxes or masks.
+- [Weather Watching](https://walzr.com/weather-watching) uses YOLO to detect and track people, selects a clear frame per person, and sends crops to Gemini for classification. Relevant to our detector, representative crop, classifier sequence. Video tracking does not solve our cross-panorama identity problem.
+- [LA Damage](https://walzr.com/la-damage) shows color-coded damage classes on a map with before/after images from county, Street View and Compass sources. Its assessment data comes from the county assessor; the page does not establish an automated damage classifier.
+- [17K-Graffiti](https://github.com/visual-ds/17K-Graffiti) provides a Street View graffiti detection precedent with Faster R-CNN. [Dataset and weights](https://zenodo.org/records/5899631) require approval and are restricted to academic use.
+- [Graffitiview](https://github.com/vladysolonyi/graffitiview) collects panoramas, splits them and detects graffiti for an archive. Its README explicitly lists improving the model for panorama images as future work.
+- [STORM](https://zenodo.org/records/3238357) supplies 1,022 smartphone images with graffiti/tagging boxes. [KGD](https://noonv.github.io/KGD/) has 1,927 images and a YOLOv5s study. These are possible training sources, not verified improvements over SAM3 on Coruña; check reuse terms and checkpoint availability first.
+
+Proposed small detector comparison: separate SAM3 prompts with shared image features versus
+[Grounding DINO](https://github.com/IDEA-Research/GroundingDINO) on the same 30–50 full source
+views, including graffiti-positive scenes and negatives. Review missed objects, false positives,
+crop completeness, duplicate boxes and runtime. Existing crop-category reviews cannot measure
+missed detections. Keep masks saved and classify rectangular crops. No detector replacement or
+specialist training has been decided.
+
+Local category-review snapshot: 40 human labels on sample `4a52d925395c30ed`; Intern-Decision-2B
+matched 33/40 and Qwen3.5-2B matched 27/40. None of those human labels were graffiti or street-name
+plates. These are preliminary results on a small reviewed subset, not a city-wide accuracy estimate.
