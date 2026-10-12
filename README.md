@@ -462,6 +462,8 @@ non-representative view, context images, mobile layout and safe refresh behavior
 
 ### Street-text image experiment
 
+**Archived after review, 2026-10-12.** The user found that additional detections were mostly false positives; useful lettering was generally already inside SAM categories, with shirts as an exception. Do not expand this pass or add its candidates to the map. Keep the saved experiment for reference. The next proposed experiment is outfit imagery, still at the discussion stage.
+
 Run `.venv/bin/python explore/street_text_experiment.py --run data/coruna/apple/multicategory/765844a02f75` to build a CPU-only, detection-only review at `http://100.83.166.6:8791/street-text/`.
 
 The frozen 50-scene sample contains 25 randomly selected views and five each with graffiti, street-name proposals, shop signs, other categories, or no SAM proposals. It selects distinct panoramas from completed views. This is an exploratory sample, not a city-wide accuracy estimate. RapidOCR's installed text detector runs on the original perspective image and overlapping 1536-pixel tiles. Recognition and orientation classification are disabled: unreadable lettering can still produce a saved crop. The detector can also miss lettering or detect non-text patterns.
@@ -471,3 +473,15 @@ Each region retains its polygon in source-image coordinates, a padded image crop
 The review offers crops, numbered scene overlays, original-resolution images, coverage filters, optional SAM boxes, per-region text/not-text labels, and scene-level missed-text notes. Labels stay in browser local storage until exported as JSON. Generated images and reports are excluded from Git.
 
 The first completed sample, `41a87cef15e0`, produced 880 candidate regions across 50 scenes: 547 outside SAM boxes, 80 overlapping other SAM categories, and 253 overlapping shop-sign/street-name boxes. 661 retained regions had tile-only provenance. These are detector candidates, not confirmed text counts; the whole-image and tiled passes can also split lettering differently. Visual spot-checks found additional house numbers, shop lettering and graffiti, but many false positives on windows, foliage and grilles. This baseline needs review/filtering before map publication. The 50-scene CPU pass took about 12 minutes while SAM continued running. Crop dimensions, full-resolution context files, browser navigation/filters/local review storage, and unchanged per-view records on resume were checked.
+
+### People pilot and capture dates
+
+The map has a **People · pilot** layer from the single SAM3 prompt `person`, without classification, OCR, outfit attributes or cross-image person matching. Run `.venv/bin/python explore/person_experiment.py` to resume the isolated pilot `data/coruna/apple/multicategory/8b6f53a1131e`. It reuses the frozen 50-view street-text sample, one view per panorama, and the main SAM run's pinned model revision. The sample was selected for general street variety, not to estimate person-detection accuracy. The production detector and its categories are unchanged.
+
+The first pilot saved 45 person proposals in 16 of the 50 views. Each includes a padded full-person crop where visible, a quarter-resolution mask, source geometry, camera coordinates, capture date and full-image context. Some detections are people depicted on posters, partial/occluded bodies, or overlapping proposals. No extra classifier was added to remove them. The layer is explicitly a pilot; its dots represent capture-camera positions, not measured person locations.
+
+`explore/export_layers.py --extra-run data/coruna/apple/multicategory/8b6f53a1131e` includes the pilot alongside the main category run. The installed 15-minute refresh service keeps this argument, so later map updates retain the People layer. Supplemental runs must have distinct categories. The existing source images, predictions and duplicate groups are preserved.
+
+**Image capture date** in the map's layer panel filters both map and wall using inclusive From/To dates. It uses provider capture dates, not the snapshot publication time. Apple ISO timestamps retain their recorded calendar day; older records with only a month match any overlapping date range. Unknown dates are included by default and can be excluded. Filtering occurs on observations before duplicate grouping, so a matching observation can replace an out-of-range representative. Viewpoint strips then contain only the matching observations. Reset dates restores the full time range. Snapshot updates preserve the chosen filter. The legacy collection exposes only its exported representative date, so its historical member views cannot be filtered individually.
+
+The category classifier remains a separate, optional evaluation stage intended to catch incorrect SAM category proposals. Its small evaluation predictions are not automatically applied to map layers, and it is not part of the People pilot.

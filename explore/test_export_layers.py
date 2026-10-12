@@ -75,6 +75,63 @@ class LayerExportTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 asset_url(Path(tmp) / 'private.jpg', base, out)
 
+    def test_supplemental_people_layer_survives_refresh_and_keeps_its_context(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp) / 'city'
+            out = base / 'site'
+
+            def make_run(name, category, count=1):
+                run = base / 'apple' / 'multicategory' / name
+                run.mkdir(parents=True, exist_ok=True)
+                config = {'prompts': {category: [category]}, 'source': 'apple',
+                          'model': 'sam3', 'threshold': .5}
+                if category == 'person':
+                    config['experiment'] = 'person-pilot-v1'
+                (run / 'config.json').write_text(json.dumps(config))
+                for index in range(count):
+                    view = run / 'views' / f'view{index}'
+                    view.mkdir(parents=True, exist_ok=True)
+                    crop = view / 'crop.jpg'
+                    crop.write_bytes(b'jpg')
+                    result = {'source': 'apple', 'view_id': f'view{index}',
+                              'image_size': [100, 100],
+                              'metadata': {'lat': 43.3, 'lon': -8.4, 'date': '2023-05-10'},
+                              'predictions': [{'id': f'{category}-{index}', 'category_proposal': category,
+                                               'score': .9, 'prompt': category, 'box': [0, 0, 50, 90],
+                                               'crop': str(crop)}]}
+                    (view / 'result.json').write_text(json.dumps(result))
+                return run
+
+            main = make_run('main', 'graffiti')
+            people = make_run('pilot', 'person')
+            first = export(base, main, out, extra_runs=[people])
+            self.assertEqual(first['total_detections'], 2)
+            self.assertEqual(first['completed_views'], 1)
+            self.assertEqual([run['completed_views'] for run in first['runs']], [1, 1])
+            person = next(c for c in first['categories'] if c['id'] == 'person')
+            self.assertEqual(person['label'], 'People')
+            self.assertEqual(person['pilot'], 'person-pilot-v1')
+            self.assertEqual(person['completed_views'], 1)
+            item = json.loads((out / person['url']).read_text())['features'][0]['properties']
+            self.assertEqual(item['raw'], '/proposal-context/apple/pilot/view0.jpg')
+            self.assertEqual(item['date'], '2023-05-10')
+            self.assertTrue((out / item['crop'].lstrip('/')).exists())
+            unchanged = export(base, main, out, if_changed=True, extra_runs=[people])
+            self.assertEqual(unchanged['snapshot_id'], first['snapshot_id'])
+            make_run('main', 'graffiti', count=2)
+            updated = export(base, main, out, if_changed=True, extra_runs=[people])
+            self.assertNotEqual(updated['snapshot_id'], first['snapshot_id'])
+            self.assertEqual({c['id']: c['count'] for c in updated['categories']},
+                             {'graffiti': 2, 'person': 1})
+            make_run('pilot', 'person', count=2)
+            updated_pilot = export(base, main, out, if_changed=True, extra_runs=[people])
+            self.assertNotEqual(updated_pilot['snapshot_id'], updated['snapshot_id'])
+            self.assertEqual(updated_pilot['total_detections'], 4)
+            published = (out / 'layers/manifest.json').read_bytes()
+            with self.assertRaisesRegex(ValueError, 'Categories appear in multiple runs'):
+                export(base, main, out, extra_runs=[main])
+            self.assertEqual((out / 'layers/manifest.json').read_bytes(), published)
+
 
 if __name__ == '__main__':
     unittest.main()

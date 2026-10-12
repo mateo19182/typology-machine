@@ -1,6 +1,7 @@
 """Snapshot completed SAM category proposals for the static map.
 
 Usage: .venv/bin/python explore/export_layers.py coruna --run data/coruna/apple/multicategory/765844a02f75
+Add --extra-run PATH for a pilot containing additional categories.
 The legacy data.json and images are untouched. Crop assets are individual file symlinks;
 all detections, including same-view duplicate flags, remain in the snapshot.
 """
@@ -32,6 +33,7 @@ STYLES = {
     'junction_box': ('Electrical cabinets', '#b18b65'),
     'door': ('Doors', '#6d9eeb'),
     'shutter': ('Shutters', '#51b9ae'),
+    'person': ('People', '#f08545'),
 }
 
 
@@ -89,11 +91,11 @@ def feature(result, prediction, crop_url, run_id):
     return {'type': 'Feature', 'geometry': {'type': 'Point', 'coordinates': [round(lon, 7), round(lat, 7)]}, 'properties': props}
 
 
-def export(city_base, run, out, if_changed=False):
+def export(city_base, run, out, if_changed=False, extra_runs=()):
     out.mkdir(parents=True, exist_ok=True)
     with (out / '.layer-export.lock').open('w') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        return export_locked(city_base, run, out, if_changed)
+        return export_locked(city_base, run, out, if_changed, extra_runs)
 
 
 def read_ocr(run):
@@ -109,15 +111,31 @@ def read_ocr(run):
     return rows, hashlib.sha256(data).hexdigest()
 
 
-def export_locked(city_base, run, out, if_changed):
-    config = json.loads((run / 'config.json').read_text())
-    # Freeze the list before reading; newly completed views enter the next snapshot.
-    results = sorted((run / 'views').glob('*/result.json'))
-    ocr, ocr_sha = read_ocr(run)
-    groups, group_sources = load_groups(city_base, run.name, config['source'])
-    stats = [(p.parent.name, p.stat().st_size, p.stat().st_mtime_ns) for p in results]
-    signature = hashlib.sha256(json.dumps({'schema': 3, 'groups': group_sources, 'run': str(run.resolve()),
-        'config': config, 'results': stats, 'ocr': ocr_sha}, sort_keys=True).encode()).hexdigest()
+def export_locked(city_base, run, out, if_changed, extra_runs=()):
+    inputs, prompts, group_sources = [], {}, []
+    # Supplemental runs add distinct layers; reject overlaps rather than silently
+    # double-counting observations or choosing one run's model configuration.
+    for folder in (run, *extra_runs):
+        config = json.loads((folder / 'config.json').read_text())
+        overlap = prompts.keys() & config['prompts'].keys()
+        if overlap:
+            raise ValueError(f'Categories appear in multiple runs: {sorted(overlap)}')
+        prompts.update(config['prompts'])
+        # Freeze lists before reading; newly completed views enter the next snapshot.
+        results = sorted((folder / 'views').glob('*/result.json'))
+        ocr, ocr_sha = read_ocr(folder)
+        groups, sources = load_groups(city_base, folder.name, config['source'])
+        for source in sources:
+            if source not in group_sources:
+                group_sources.append(source)
+        stats = [(p.parent.name, p.stat().st_size, p.stat().st_mtime_ns) for p in results]
+        inputs.append({'run': folder, 'config': config, 'results': results,
+                       'ocr': ocr, 'ocr_sha': ocr_sha, 'groups': groups, 'stats': stats})
+    signature = hashlib.sha256(json.dumps({'schema': 4, 'groups': group_sources, 'runs': [
+        {'run': str(item['run'].resolve()), 'config': item['config'],
+         'results': item['stats'], 'ocr': item['ocr_sha']} for item in inputs
+    ]}, sort_keys=True).encode()).hexdigest()
+    config = inputs[0]['config']
     current = out / 'layers' / 'manifest.json'
     if if_changed and current.exists():
         existing = json.loads(current.read_text())
@@ -127,39 +145,42 @@ def export_locked(city_base, run, out, if_changed):
     snapshot = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
     destination = out / 'layers' / snapshot
     destination.mkdir(parents=True)
-    streams = {category: (destination / f'{category}.geojson').open('w') for category in config['prompts']}
+    streams = {category: (destination / f'{category}.geojson').open('w') for category in prompts}
     counts, flagged = Counter(), Counter()
-    object_ids = {category: set() for category in config['prompts']}
+    object_ids = {category: set() for category in prompts}
     fingerprint = hashlib.sha256()
     try:
         for stream in streams.values():
             stream.write('{"type":"FeatureCollection","features":[')
-        for index, path in enumerate(results):
-            raw = path.read_bytes()
-            fingerprint.update(path.parent.name.encode() + b'\0' + raw)
-            result = json.loads(raw)
-            for prediction in result['predictions']:
-                category = prediction['category_proposal']
-                item = feature(result, prediction, asset_url(prediction['crop'], city_base, out), run.name)
-                group = groups.get(prediction['id'])
-                if group:
-                    if group['group_category'] != category:
-                        raise ValueError('Duplicate group crosses category boundary')
-                    item['properties'].update(duplicate_group=group['duplicate_group'], group_rep=group['group_rep'])
-                if not prediction.get('duplicate_of'):
-                    object_ids[category].add(group['duplicate_group'] if group else prediction['id'])
-                text = ocr.get(prediction['id'])
-                if text:
-                    item['properties'].update(text=text.get('text', ''), ocr_model=text.get('model'),
-                                              ocr_confidence=text.get('confidence'))
-                stream = streams[category]
-                if counts[category]:
-                    stream.write(',')
-                json.dump(item, stream, ensure_ascii=False, separators=(',', ':'))
-                counts[category] += 1
-                flagged[category] += bool(prediction.get('duplicate_of'))
-            if index and index % 10000 == 0:
-                print(f'{index}/{len(results)} views; {sum(counts.values())} detections', flush=True)
+        for data in inputs:
+            folder, groups, ocr = data['run'], data['groups'], data['ocr']
+            fingerprint.update(str(folder.resolve()).encode() + b'\0')
+            for index, path in enumerate(data['results']):
+                raw = path.read_bytes()
+                fingerprint.update(path.parent.name.encode() + b'\0' + raw)
+                result = json.loads(raw)
+                for prediction in result['predictions']:
+                    category = prediction['category_proposal']
+                    item = feature(result, prediction, asset_url(prediction['crop'], city_base, out), folder.name)
+                    group = groups.get(prediction['id'])
+                    if group:
+                        if group['group_category'] != category:
+                            raise ValueError('Duplicate group crosses category boundary')
+                        item['properties'].update(duplicate_group=group['duplicate_group'], group_rep=group['group_rep'])
+                    if not prediction.get('duplicate_of'):
+                        object_ids[category].add(group['duplicate_group'] if group else prediction['id'])
+                    text = ocr.get(prediction['id'])
+                    if text:
+                        item['properties'].update(text=text.get('text', ''), ocr_model=text.get('model'),
+                                                  ocr_confidence=text.get('confidence'))
+                    stream = streams[category]
+                    if counts[category]:
+                        stream.write(',')
+                    json.dump(item, stream, ensure_ascii=False, separators=(',', ':'))
+                    counts[category] += 1
+                    flagged[category] += bool(prediction.get('duplicate_of'))
+                if index and index % 10000 == 0:
+                    print(f"{index}/{len(data['results'])} views; {sum(counts.values())} detections", flush=True)
         for stream in streams.values():
             stream.write(']}')
     except Exception:
@@ -171,19 +192,24 @@ def export_locked(city_base, run, out, if_changed):
         for stream in streams.values():
             stream.close()
     manifest = {
-        'schema_version': 3, 'group_sources': group_sources, 'grouping': 'partial_duplicate_proposals', 'input_signature': signature,
+        'schema_version': 4, 'group_sources': group_sources, 'grouping': 'partial_duplicate_proposals', 'input_signature': signature,
         'published_at': datetime.now(timezone.utc).isoformat(),
-        'latest_detection_at': datetime.fromtimestamp(max((x[2] for x in stats), default=0) / 1e9, timezone.utc).isoformat(),
-        'ocr_records': len(ocr), 'refresh_interval_seconds': 900,
+        'latest_detection_at': datetime.fromtimestamp(max((x[2] for data in inputs for x in data['stats']), default=0) / 1e9, timezone.utc).isoformat(),
+        'ocr_records': sum(len(data['ocr']) for data in inputs), 'refresh_interval_seconds': 900,
         'city': city_base.name, 'snapshot_at': snapshot_at, 'snapshot_id': snapshot,
-        'run_id': run.name, 'source': config['source'], 'completed_views': len(results),
+        'run_id': run.name, 'source': config['source'], 'completed_views': len(inputs[0]['results']),
+        'runs': [{'run_id': data['run'].name, 'source': data['config']['source'],
+                  'completed_views': len(data['results']), 'model': data['config']['model'],
+                  'threshold': data['config']['threshold']} for data in inputs],
         'status': 'unverified_proposals', 'location_basis': 'camera', 'deduplicated': False,
         'total_detections': sum(counts.values()), 'results_sha256': fingerprint.hexdigest(),
         'model': config['model'], 'threshold': config['threshold'],
         'categories': [{'id': category, 'label': STYLES.get(category, (category, '#aaa'))[0],
                         'color': STYLES.get(category, (category, '#aaa'))[1], 'count': counts[category],
-                        'same_view_duplicate_flags': flagged[category], 'object_count': len(object_ids[category]), 'prompts': prompts,
-                        'url': f'layers/{snapshot}/{category}.geojson'} for category, prompts in config['prompts'].items()],
+                        'same_view_duplicate_flags': flagged[category], 'object_count': len(object_ids[category]), 'prompts': category_prompts,
+                        'run_id': data['run'].name, 'completed_views': len(data['results']),
+                        'pilot': data['config'].get('experiment'),
+                        'url': f'layers/{snapshot}/{category}.geojson'} for data in inputs for category, category_prompts in data['config']['prompts'].items()],
     }
     (destination / 'manifest.json').write_text(json.dumps(manifest, indent=2))
     temp = out / 'layers' / f'.manifest-{snapshot}.tmp'
@@ -197,12 +223,14 @@ def main():
     parser.add_argument('city', nargs='?', default='coruna')
     parser.add_argument('--run', required=True, type=Path)
     parser.add_argument('--out', type=Path)
+    parser.add_argument('--extra-run', action='append', type=Path, default=[],
+                        help='Supplement with a run containing additional categories (repeatable)')
     parser.add_argument('--if-changed', action='store_true', help='Skip publishing when detections and OCR are unchanged')
     parser.add_argument('--prune-hours', type=int, help='Retain at least 8 snapshots and all snapshots newer than this many hours')
     args = parser.parse_args()
     base = ROOT / 'data' / args.city
     out = args.out or base / 'site'
-    manifest = export(base, args.run.resolve(), out, args.if_changed)
+    manifest = export(base, args.run.resolve(), out, args.if_changed, [p.resolve() for p in args.extra_run])
     if args.prune_hours is not None:
         if args.prune_hours < 24:
             parser.error('Snapshot retention must be at least 24 hours')

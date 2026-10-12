@@ -67,6 +67,7 @@ footer { padding: 28px 16px; color: var(--dim); display: flex; flex-wrap: wrap; 
 .object-layers { position: absolute; z-index: 800; right: 14px; top: 76px; width: 295px; max-height: calc(100dvh - 180px); overflow: auto; border: 1px solid #37383c; border-radius: 8px; background: rgba(15,17,20,.96); box-shadow: 0 4px 24px #0006; }
 .object-layers summary { cursor: pointer; padding: 12px 14px; color: var(--fg); font-size: 13px; }
 .layer-search { display:grid; gap:7px; padding:0 14px 12px; }.layer-search label,.layer-search span { font-size:10px; color:#aaa59b; }.layer-search input { width:100%; padding:8px; border:1px solid #444; border-radius:4px; color:var(--fg); background:var(--bg); font:inherit; }.layer-search button,.snapshot-update button { font:inherit; padding:5px 8px; border:1px solid #555; border-radius:4px; color:var(--amber); background:var(--tile); cursor:pointer; }.snapshot-update { padding:0 14px; }.snapshot-update button { margin-bottom:10px; }.snapshot-update span { font-size:10px; color:#aaa59b; }.snapshot-update button[hidden] { display:none; }
+.capture-filter { margin:0 14px 12px; padding:10px; border:1px solid #37383c; border-radius:4px; }.capture-filter legend { color:var(--fg); }.capture-dates { display:grid; grid-template-columns:1fr 1fr; gap:8px; }.capture-dates label { min-width:0; }.capture-dates input { display:block; width:100%; min-width:0; padding:5px 2px; background:var(--bg); color:var(--fg); border:1px solid #555; font:inherit; font-size:10px; }.capture-filter .date-help { display:block; font-size:10px; color:#aaa59b; margin-top:6px; }.capture-filter button { color:var(--amber); background:none; border:0; font:inherit; cursor:pointer; padding:5px 0; }.capture-filter #date-error { color:#eeb785; }
 .layer-heading { display: flex; justify-content: space-between; padding: 0 14px 8px; color: #a8a49b; }
 .layer-heading button { color: var(--amber); font: inherit; background: none; border: 0; cursor: pointer; }
 .layer-option { display: grid; grid-template-columns: 16px 9px 1fr auto; align-items: center; gap: 8px; padding: 6px 12px; cursor: pointer; }
@@ -98,6 +99,7 @@ body[data-view="wall"] #map-status { display: none; }body[data-view="wall"] .obj
 <details class="object-layers" id="object-layers" open>
   <summary id="layer-summary">Object layers</summary>
   <label class="group-control" style="display:block;padding:0 14px 12px"><input id="group-duplicates" type="checkbox" checked> Group duplicate observations</label><div class="layer-search"><label for="object-search">Search text in selected layers</label><input id="object-search" type="search" placeholder="Street or shop name…"><button id="focus-results">Show results on map</button><span id="search-note">OCR coverage is partial; text may contain errors.</span></div>
+  <fieldset class="capture-filter"><legend>Image capture date</legend><div class="capture-dates"><label for="date-from">From<input id="date-from" type="date"></label><label for="date-to">To<input id="date-to" type="date"></label></div><label><input id="date-unknown" type="checkbox" checked> Include unknown dates</label><br><button id="date-reset" type="button">Reset dates</button><span id="date-error" class="date-help" role="status"></span><span class="date-help">Both dates included. Month-only dates match any overlapping day. Filters map and wall.</span></fieldset>
   <div class="snapshot-update"><button id="snapshot-update" hidden>New data available · Update</button><span id="update-status" role="status"></span></div>
   <div class="layer-heading"><span>Show on map &amp; wall</span><button id="layers-none">Clear</button></div>
   <div id="layer-options"></div>
@@ -141,6 +143,8 @@ body[data-view="wall"] #map-status { display: none; }body[data-view="wall"] .obj
   if (matchMedia('(max-width:600px)').matches) $('object-layers').open=false;
   let map, refreshMap = () => {}, order = [], shown = 0, cur = -1, curSign, curObject, full = false;
   let colorClusters = false, clusterFilter = '', searchQuery = '', active = [], browse = [], manifest, availableManifest;
+  let captureFrom='', captureTo='', includeUnknownDates=true;
+  const dateSelections=new WeakMap();
   const normalize = value => String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
   const loaded = new Map(), enabled = new Set(['legacy']), pending = new Map();
   const legacy = await fetch('data.json').then(r => { if (!r.ok) throw Error('Could not load signs'); return r.json(); });
@@ -163,6 +167,42 @@ body[data-view="wall"] #map-status { display: none; }body[data-view="wall"] .obj
       return {...views[0],object_id:id,views,search_text:texts.join('\n'),group_text:texts.join('\n')};
     });
   }
+  // Compare calendar dates as recorded by the provider, without local-time conversion.
+  // A month-only capture is an interval, not an invented first-of-month timestamp.
+  function captureInterval(value){
+    const match=String(value||'').match(/^(\d{4})-(\d{2})(?:-(\d{2})(?:T.*)?)?$/);
+    if(!match)return null;
+    const [,year,month,day]=match,y=Number(year),m=Number(month);
+    if(m<1||m>12)return null;
+    const last=new Date(Date.UTC(y,m,0)).getUTCDate();
+    if(day&&(Number(day)<1||Number(day)>last))return null;
+    const prefix=`${year}-${month}-`;
+    return day?[prefix+day,prefix+day]:[prefix+'01',prefix+String(last).padStart(2,'0')];
+  }
+  function captureMatches(row){
+    const span=captureInterval(row.d);
+    return span ? (!captureFrom||span[1]>=captureFrom)&&(!captureTo||span[0]<=captureTo) : includeUnknownDates;
+  }
+  function selectedRows(rows){
+    if(!captureFrom&&!captureTo&&includeUnknownDates)return grouped()?rows.objects||rows:rows;
+    const key=[captureFrom,captureTo,includeUnknownDates].join('|');
+    let cached=dateSelections.get(rows);
+    if(!cached||cached.key!==key){
+      const filtered=rows.filter(captureMatches);
+      cached={key,rows:filtered,objects:rows.objects?groupObservations(filtered):filtered};
+      dateSelections.set(rows,cached);
+    }
+    return grouped()?cached.objects:cached.rows;
+  }
+  function applyCaptureDates(){
+    const from=$('date-from').value,to=$('date-to').value,invalid=!!(from&&to&&from>to);
+    $('date-error').textContent=invalid?'From must be on or before To. Keeping the previous filter.':'';
+    $('date-from').setAttribute('aria-invalid',String(invalid));$('date-to').setAttribute('aria-invalid',String(invalid));
+    if(invalid)return;
+    captureFrom=from;captureTo=to;includeUnknownDates=$('date-unknown').checked;updateSelection();
+  }
+  for(const id of ['date-from','date-to','date-unknown'])$(id).onchange=applyCaptureDates;
+  $('date-reset').onclick=()=>{$('date-from').value='';$('date-to').value='';$('date-unknown').checked=true;applyCaptureDates();};
   let searchTimer;
   $('object-search').oninput=()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>{searchQuery=normalize($('object-search').value.trim());updateSelection();},150);};
   $('focus-results').onclick=()=>{if(!active.length)return;setView('map');map.fitBounds(L.latLngBounds(active.map(s=>[s.la,s.lo])),{padding:[30,30],maxZoom:18});};
@@ -187,8 +227,8 @@ body[data-view="wall"] #map-status { display: none; }body[data-view="wall"] .obj
   };
   setInterval(async()=>{try{const next=await fetch('layers/manifest.json',{cache:'no-store'}).then(r=>{if(!r.ok)throw Error();return r.json();});if(manifest&&next.snapshot_id!==manifest.snapshot_id){availableManifest=next;$('snapshot-update').hidden=false;}}catch(error){/* Keep current snapshot usable while offline. */}},60000);
   function updateSelection() {
-    active = [...enabled].flatMap(id => {const rows=loaded.get(id)||[];return grouped() ? rows.objects||rows : rows;}).filter(matches);
-    for(const c of categories.values()){const count=document.querySelector(`[data-category-count="${c.id}"]`);if(count&&!pending.has(c.id))count.textContent=layerCount(c).toLocaleString();}
+    active = [...enabled].flatMap(id => {const rows=loaded.get(id)||[];return selectedRows(rows);}).filter(matches);
+    for(const c of categories.values()){const count=document.querySelector(`[data-category-count="${c.id}"]`);if(count&&!pending.has(c.id)){const rows=loaded.get(c.id);count.textContent=(rows?selectedRows(rows).length:layerCount(c)).toLocaleString();count.title=rows?'Items matching the capture-date filter':'Total in snapshot; enable layer to filter by capture date';}}
     order = active.slice(); browse = order; cur = -1;
     $('count').textContent = `${active.length.toLocaleString()} ${searchQuery?'matches':grouped()?'items':'observations'}${grouped()?' · '+active.reduce((n,s)=>n+(s.views?.length||1),0).toLocaleString()+' observations':''}`;
     $('focus-results').disabled=!active.length;
@@ -202,7 +242,7 @@ body[data-view="wall"] #map-status { display: none; }body[data-view="wall"] .obj
     const row = document.createElement('label'); row.className='layer-option';
     const input = document.createElement('input'); input.type='checkbox'; input.checked=enabled.has(c.id); input.dataset.category=c.id;
     const swatch=document.createElement('span'); swatch.className='swatch'; swatch.style.background=c.color;
-    const name=document.createElement('span'); name.textContent=c.label;
+    const name=document.createElement('span'); name.textContent=c.label+(c.pilot?' · pilot':'');if(c.pilot)name.title=`Person experiment · ${c.completed_views||0} street views`;
     const count=document.createElement('small'); count.textContent=layerCount(c).toLocaleString();count.dataset.categoryCount=c.id;
     row.append(input,swatch,name,count); $('layer-options').append(row);
     input.onchange=async () => {
@@ -265,8 +305,8 @@ body[data-view="wall"] #map-status { display: none; }body[data-view="wall"] .obj
     const views=object.views||[object],viewIndex=views.findIndex(v=>v.id===s.id);
     $('d-text').textContent=s.text||s.t||s.b||label(s);
     $('d-id').textContent=`${label(s)} · ${cur+1} / ${browse.length}${views.length>1?' · viewpoint '+(viewIndex+1)+' / '+views.length:''}`;
-    $('d-where').textContent=s.proposal?'Camera location · detected category, not yet verified':[s.st,s.ba].filter(Boolean).join(' · ');
-    $('d-date').textContent=s.d?`Captured ${s.d.includes('T')?new Date(s.d).toLocaleDateString():s.d}`:'';
+    $('d-where').textContent=s.proposal?(s.category==='person'?'SAM person detection · camera location':'Camera location · detected category, not yet verified'):[s.st,s.ba].filter(Boolean).join(' · ');
+    $('d-date').textContent=s.d?`Captured ${s.d}`:'Capture date unknown';
     $('d-seen').textContent=s.proposal?`Prompt: “${s.prompt}” · score ${Number(s.score).toFixed(2)}`:`${s.seen} views`;
     $('d-ocr').textContent=s.text?'OCR · automatic transcription':'';$('d-ocr').title=s.ocr_model||'';
     $('d-cluster').textContent=s.proposal?(views.length>1?`${views.length} viewpoints grouped as one object`:'No other grouped viewpoint in this snapshot'):clusters.get(s.cluster_id)?.name||'';
