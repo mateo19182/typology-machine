@@ -144,7 +144,7 @@ footer { padding: 28px 16px; color: var(--dim); display: flex; flex-wrap: wrap; 
   $('v-map').addEventListener('click', () => setView('map'));
   function buildMap() {
     map = L.map('map', { preferCanvas: true, zoomControl: true, attributionControl: true }).setView([43.3665, -8.4065], 14);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', { subdomains: 'abcd', maxZoom: 20,
+    L.tileLayer('https://basemaps.cartocdn.com/rastertiles/dark_nolabels/{z}/{x}/{y}{r}.png?key=REMOVED_CARTO_API_KEY', { maxZoom: 20,
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>' }).addTo(map);
     const canvas = L.canvas({ padding: 0.5 });
     const radius = z => z < 13 ? 1.2 : z < 16 ? 2.2 : z < 18 ? 4 : 6;
