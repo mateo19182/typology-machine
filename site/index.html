@@ -22,6 +22,9 @@ nav { display: flex; gap: 14px; flex-wrap: wrap }
 nav button, .detail button, .detail a.btn { font: inherit; background: none; border: 0; color: var(--dim); cursor: pointer; padding: 2px 0; letter-spacing: .08em; text-transform: uppercase; border-bottom: 1px solid transparent }
 nav button[aria-pressed="true"], .detail button[aria-pressed="true"] { color: var(--amber); border-bottom-color: var(--amber) }
 nav button:hover, .detail button:hover, .detail a.btn:hover { color: var(--fg) }
+.cluster-controls { padding: 8px 16px; border-bottom: 1px solid var(--line); display: flex; gap: 14px; flex-wrap: wrap; align-items: center }
+.cluster-controls[hidden] { display: none }
+.cluster-controls select { background: var(--tile); color: var(--fg); font: inherit; max-width: 65vw }
 nav button:focus-visible, .tile:focus-visible, .detail button:focus-visible, .detail a.btn:focus-visible { outline: 1px solid var(--amber); outline-offset: 2px }
 
 .wall { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 2px; padding: 2px; align-content: start }
@@ -69,6 +72,11 @@ footer { padding: 28px 16px; color: var(--dim); display: flex; flex-wrap: wrap; 
     <button id="shuffle">Shuffle</button>
   </nav>
 </header>
+<div class="cluster-controls" id="cluster-controls" hidden>
+  <label><input type="checkbox" id="cluster-colors"> Cluster colors</label>
+  <label>Group <select id="cluster-filter"><option value="">All signs</option><option value="unassigned">Not clustered</option></select></label>
+  <span id="cluster-coverage"></span>
+</div>
 
 <div id="map"></div>
 <main class="wall" id="wall" aria-label="Signs"></main>
@@ -92,8 +100,9 @@ footer { padding: 28px 16px; color: var(--dim); display: flex; flex-wrap: wrap; 
       <span id="d-where"></span>
       <span id="d-date"></span>
       <span id="d-seen"></span>
+      <span id="d-cluster"></span>
       <a id="d-map" href="#">map</a>
-      <a id="d-link" target="_blank" rel="noopener">Look Around ↗</a>
+      <a id="d-link" target="_blank" rel="noopener"></a>
     </div>
   </div>
 </div>
@@ -104,6 +113,15 @@ footer { padding: 28px 16px; color: var(--dim); display: flex; flex-wrap: wrap; 
   const $ = id => document.getElementById(id);
   const wall = $('wall');
   const { meta, signs } = await fetch('data.json').then(r => r.json());
+  const clusters = new Map((meta.clustering?.clusters || []).map(c => [c.id, c]));
+  let colorClusters = false, clusterFilter = '', refreshMap = () => {};
+  const matches = s => !clusterFilter || (clusterFilter === 'unassigned' ? !s.cluster_id : s.cluster_id === clusterFilter);
+  const signColor = s => colorClusters ? (s.cluster_color || '#55585d') : '#d79a3a';
+  if (clusters.size) {
+    $('cluster-controls').hidden = false;
+    for (const c of clusters.values()) { const o = document.createElement('option'); o.value = c.id; o.textContent = `${c.label} · ${c.name}`; $('cluster-filter').appendChild(o); }
+    $('cluster-coverage').textContent = `${signs.filter(s => s.cluster_id).length.toLocaleString()} / ${signs.length.toLocaleString()} signs assigned; gray = not clustered or noise`;
+  }
   let order = signs.map((_, i) => i), cur = -1, shown = 0;
   const CHUNK = 300;
   $('count').textContent = `${meta.n.toLocaleString('en')} signs`;
@@ -113,6 +131,7 @@ footer { padding: 28px 16px; color: var(--dim); display: flex; flex-wrap: wrap; 
     const s = signs[idx];
     const b = document.createElement('button');
     b.className = 'tile'; b.dataset.i = idx;
+    if (colorClusters) b.style.borderBottom = `3px solid ${signColor(s)}`;
     b.setAttribute('aria-label', s.t || s.b || 'sign');
     b.innerHTML = `<img loading="lazy" src="img/${s.id}.jpg" width="${s.w}" height="${s.h}" alt="">`;
     b.addEventListener('click', () => open(s));
@@ -122,6 +141,8 @@ footer { padding: 28px 16px; color: var(--dim); display: flex; flex-wrap: wrap; 
   function render() { wall.innerHTML = ''; shown = 0; more(); }
   new IntersectionObserver(es => { if (es[0].isIntersecting && shown < order.length) more(); }, { rootMargin: '1200px' }).observe($('more'));
   $('shuffle').addEventListener('click', () => { for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; } render(); setView('wall'); });
+  $('cluster-colors').onchange = () => { colorClusters = $('cluster-colors').checked; render(); refreshMap(); };
+  $('cluster-filter').onchange = () => { clusterFilter = $('cluster-filter').value; order = signs.map((_, i) => i).filter(i => matches(signs[i])); $('count').textContent = `${order.length.toLocaleString('en')} signs`; cur = -1; render(); refreshMap(); };
 
   // ---- map: satellite imagery; dots when far out, the signs themselves once close enough
   const PIN_ZOOM = 17, PIN_H = 36;
@@ -149,7 +170,7 @@ footer { padding: 28px 16px; color: var(--dim); display: flex; flex-wrap: wrap; 
       if (z < PIN_ZOOM) {
         if (map.hasLayer(pinLayer)) map.removeLayer(pinLayer);
         if (!map.hasLayer(dotLayer)) dotLayer.addTo(map);
-        const r = radius(z); dots.forEach(d => d.setRadius(r));
+        const r = radius(z); dotLayer.clearLayers(); dots.forEach((d, i) => { d.setRadius(r); d.setStyle({ fillColor: signColor(signs[i]) }); if (matches(signs[i])) dotLayer.addLayer(d); });
         return;
       }
       if (map.hasLayer(dotLayer)) map.removeLayer(dotLayer);
@@ -157,14 +178,16 @@ footer { padding: 28px 16px; color: var(--dim); display: flex; flex-wrap: wrap; 
       const b = map.getBounds().pad(0.2);
       const h = z >= 19 ? PIN_H * 1.6 : PIN_H;
       for (const s of signs) {
+        if (!matches(s)) continue;
         if (!b.contains([s.la, s.lo])) continue;
         const w = Math.round(h * s.w / s.h);
-        const icon = L.divIcon({ className: 'pin', html: `<img src="img/${s.id}.jpg" alt="">`, iconSize: [w + 4, h + 4], iconAnchor: [(w + 4) / 2, (h + 4) / 2] });
+        const icon = L.divIcon({ className: 'pin', html: `<img style="border-bottom:3px solid ${signColor(s)}" src="img/${s.id}.jpg" alt="">`, iconSize: [w + 4, h + 4], iconAnchor: [(w + 4) / 2, (h + 4) / 2] });
         L.marker([s.la, s.lo], { icon, title: s.t || s.b || s.st || '' }).on('click', () => open(s)).addTo(pinLayer);
       }
       if (!map.hasLayer(pinLayer)) pinLayer.addTo(map);
     }
     map.on('zoomend moveend', refresh);
+    refreshMap = refresh;
     refresh();
   }
 
@@ -187,7 +210,8 @@ footer { padding: 28px 16px; color: var(--dim); display: flex; flex-wrap: wrap; 
     $('d-where').textContent = [s.st, s.ba].filter(Boolean).join(' · ');
     $('d-date').textContent = s.d;
     $('d-seen').textContent = `${s.seen} views`;
-    $('d-link').href = s.u;
+    $('d-cluster').textContent = clusters.get(s.cluster_id)?.name || (clusters.size ? 'Not clustered' : '');
+    $('d-link').href = s.u; $('d-link').textContent = s.src === 'g' ? 'Street View ↗' : 'Look Around ↗';
     $('d-map').onclick = e => { e.preventDefault(); close(); setView('map'); map.setView([s.la, s.lo], 18); };
     detail.setAttribute('open', ''); $('close').focus();
   }

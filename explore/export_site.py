@@ -19,6 +19,27 @@ pillow_heif.register_heif_opener()
 ROOT = Path(__file__).resolve().parent.parent
 
 
+def load_clusters(base):
+    path = base / "cluster_metadata_dinov2.json"
+    if not path.exists():
+        return {}, None
+    report = json.loads(path.read_text())
+    assignments = {a["crop_id"]: a for a in report["assignments"]}
+    return assignments, {k: report[k] for k in ("run_id", "embedding", "clusters", "coverage")}
+
+
+def source_link(r, source):
+    """where to see this view in the provider's own viewer"""
+    if source == "gsv":
+        x0, y0, x1, y1 = r["box"]
+        W, H = r["view_size"]
+        fy = 0.5 / math.tan(math.radians(r["fov"][1] / 2))
+        pitch = r["view_pitch"] + math.degrees(math.atan((0.5 - (y0 + y1) / 2 / H) / fy))
+        return f"https://www.google.com/maps/@?api=1&map_action=pano&pano={r['pano']}&heading={r['bearing']:.1f}&pitch={pitch:.1f}&fov=40"
+    yaw = {0: 0, 1: 90, 2: 180, 3: -90}.get(r["face"], 0)
+    return lookaround.build_permalink(lat=r["lat"], lon=r["lon"], heading=math.degrees(r["heading"]) + yaw, radians=False)
+
+
 def thumb(job):
     src, dst, size, face, ctx, ctx_size = job
     try:
@@ -58,6 +79,7 @@ def main():
     pos = [p for p in map(json.loads, open(base / "sign_positions.jsonl")) if p["n_rays"] >= a.min_rays]
     loc = {r["id"]: r for r in map(json.loads, open(base / "location.jsonl"))} if (base / "location.jsonl").exists() else {}
     tags = {t["id"]: t for t in map(json.loads, open(base / "tags.jsonl"))} if (base / "tags.jsonl").exists() else {}
+    assignments, cluster_meta = load_clusters(base)
 
     picks = []
     for p in pos:
@@ -84,19 +106,24 @@ def main():
         if not wh:
             continue
         l = loc.get(r["id"], {})
-        yaw = {0: 0, 1: 90, 2: 180, 3: -90}.get(r["face"], 0)
-        W, H = r["face_size"]
+        W, H = r["face_size"] if a.source == "apple" else r["view_size"]
         x0, y0, x1, y1 = r["box"]
         o = {"bx": [round(x0 / W, 4), round(y0 / H, 4), round(x1 / W, 4), round(y1 / H, 4)],
              "ctx": (out / "ctx" / f"{p['sign']}.jpg").exists(),"id": p["sign"], "s": r["score"], "d": r["date"][:7], "seen": len(groups[p["sign"]]["members"]),
              "la": round(p["lat"], 6), "lo": round(p["lon"], 6), "hm": p["height_m"], "w": wh[0], "h": wh[1],
              "st": l.get("street"), "ba": l.get("barrio"),
-             "u": lookaround.build_permalink(lat=r["lat"], lon=r["lon"], heading=math.degrees(r["heading"]) + yaw, radians=False)}
+             "src": a.source[0], "u": source_link(r, a.source)}
         if t:
             o.update(k=t.get("kind"), b=t.get("business"), t=t.get("text"))
+        assignment = assignments.get(r["id"])
+        if assignment:
+            o.update(cluster_id=assignment["cluster_id"], cluster_color=assignment["color"])
         data.append(o)
     meta = {"city": "A Coruña", "n": len(data), "groups": len(groups), "instances": len(rows), "dates": sorted({d["d"] for d in data}),
             "tagged": bool(tags)}
+    if cluster_meta:
+        meta["clustering"] = cluster_meta
+        meta["clustering"]["mapped_signs"] = sum("cluster_id" in s for s in data)
     json.dump({"meta": meta, "signs": data}, open(out / "data.json", "w"), ensure_ascii=False, separators=(",", ":"))
     shutil.copy(ROOT / "site" / "index.html", out / "index.html")
     print(len(data), "signs ->", out, meta)
