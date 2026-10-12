@@ -139,3 +139,23 @@ Mariña panorama has 11 earlier captures, back to October 2008), and full-resolu
 (16384×8192, plain equirectangular) download in a few hundred milliseconds. A random sample of
 panos has a median of seven earlier captures; about a third go back to 2008. So the time axis is
 real: the same shop sign in 2008, 2010, 2013, 2017, 2024.
+
+## 2026-10-12 · after midnight
+
+**Parallel streams.** Apple city run on the GPU; Google fetcher pulling the old town's current panoramas
+and every historical capture behind them (8192×4096 each); a Google detector that cuts each
+panorama into eight 70° perspective views and runs SAM 3 on them.
+
+**Triangulation.** Each view of a grouped sign is a ray from a known camera position. Least-squares
+intersection of a sign's rays gives its map position and, from the vertical angle, its height above
+the street. On the Apple set: 4.7k signs from two or more rays, median residual zero, typical
+distance 12 m, median height 2.9 m. Groups with one view get a point 8 m along the ray, flagged.
+Grouping needed recalibrating for DINOv2 (cosine 0.8 instead of SigLIP's 0.88) and a spatial split,
+because repeated identical designs (the Marineda mall totems, the tunnel exit signs) chain-merged
+along a whole street.
+
+**The time machine works by geometry alone.** Given a sign's position and height, every Google
+panorama near it, from any year, is a known camera: compute bearing, pitch and angular size, cut
+that window. No detector touches the old imagery. First strips: a storage-unit sign on a corner
+seen on 17 dates from October 2008 to February 2024, with two different businesses before it. The
+framing is a few degrees loose; the fix is to let SAM 3 snap the crop inside each dated window.
