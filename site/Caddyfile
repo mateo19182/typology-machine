@@ -1,0 +1,13 @@
+{
+	auto_https off
+	admin off
+}
+
+http://127.0.0.1:8790 {
+	root * /home/mateo/projects/typology-machine/data/coruna/site
+	encode zstd gzip
+	file_server
+	@assets path /img/* /mask/*
+	header @assets Cache-Control "public, max-age=604800"
+	header /data.json Cache-Control "public, max-age=300"
+}

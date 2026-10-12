@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Typology Machine</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<style>
+:root { --bg: #0a0b0d; --tile: #121316; --tile-hi: #1a1b1f; --fg: #d8d3c8; --dim: #6f6b63; --line: #1f2024; --amber: #d79a3a;
+  --mono: "IBM Plex Mono", "SFMono-Regular", Menlo, monospace; color-scheme: dark; }
+* { box-sizing: border-box }
+html, body { height: 100% }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 12px/1.5 var(--mono); display: flex; flex-direction: column }
+a { color: inherit }
+::selection { background: var(--amber); color: var(--bg) }
+
+header { padding: 14px 16px 10px; display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: baseline; justify-content: space-between; border-bottom: 1px solid var(--line); flex: none }
+.mast { letter-spacing: .18em; text-transform: uppercase; color: var(--dim); white-space: nowrap }
+.mast b { color: var(--fg); font-weight: 400 }
+nav { display: flex; gap: 14px; flex-wrap: wrap }
+nav button, .detail button, .detail a.btn { font: inherit; background: none; border: 0; color: var(--dim); cursor: pointer; padding: 2px 0; letter-spacing: .08em; text-transform: uppercase; border-bottom: 1px solid transparent }
+nav button[aria-pressed="true"] { color: var(--amber); border-bottom-color: var(--amber) }
+nav button:hover, .detail button:hover, .detail a.btn:hover { color: var(--fg) }
+nav button:focus-visible, .tile:focus-visible, .detail button:focus-visible, .detail a.btn:focus-visible { outline: 1px solid var(--amber); outline-offset: 2px }
+
+.wall { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 2px; padding: 2px; align-content: start }
+.tile { position: relative; aspect-ratio: 1; background: var(--tile); border: 0; padding: 0; cursor: pointer; overflow: hidden; display: grid; place-items: center }
+.tile:hover { background: var(--tile-hi) }
+.tile img { width: 84%; height: 84%; object-fit: contain; display: block }
+.tile .mask { position: absolute; inset: 8%; background-color: var(--fg); opacity: .6; -webkit-mask: var(--m) center / contain no-repeat; mask: var(--m) center / contain no-repeat }
+body[data-mode="signs"] .tile .mask { display: none }
+body[data-mode="shapes"] .tile img { display: none }
+body.bw .tile img, body.bw .detail img { filter: grayscale(1) contrast(1.05) }
+.more { height: 1px }
+
+#map { flex: 1; min-height: 0; display: none }
+body[data-view="map"] #map { display: block }
+body[data-view="map"] .wall, body[data-view="map"] footer { display: none }
+.maplibregl-ctrl-attrib { font: 10px var(--mono); background: rgba(10,11,13,.7) !important; color: var(--dim) }
+.maplibregl-ctrl-attrib a { color: var(--dim) }
+.maplibregl-popup-content { background: var(--tile); color: var(--fg); font: 11px var(--mono); padding: 6px; border-radius: 0; cursor: pointer }
+.maplibregl-popup-content img { display: block; max-width: 160px; max-height: 110px }
+.maplibregl-popup-tip { border-top-color: var(--tile) !important; border-bottom-color: var(--tile) !important }
+.maplibregl-popup-close-button { display: none }
+
+.detail { position: fixed; inset: 0; background: rgba(10,11,13,.94); display: none; z-index: 10; padding: 16px; overflow: auto }
+.detail[open] { display: grid; grid-template-rows: auto 1fr auto }
+.detail .top { display: flex; justify-content: space-between; gap: 16px; align-items: baseline }
+.detail figure { margin: 0; display: grid; place-items: center; min-height: 0 }
+.detail img { max-width: min(100%, 980px); max-height: 62vh; object-fit: contain }
+.detail .info { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 24px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--dim) }
+.detail .info .t { color: var(--fg); font-size: 16px; min-width: 0; overflow-wrap: anywhere }
+.detail .info .meta { display: flex; flex-wrap: wrap; gap: 4px 18px }
+.detail .info a { color: var(--amber); text-decoration: none }
+.detail .arrows { display: flex; gap: 16px }
+
+footer { padding: 28px 16px; color: var(--dim); display: flex; flex-wrap: wrap; gap: 6px 28px; border-top: 1px solid var(--line); flex: none }
+@media (max-width: 520px) { .wall { grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)) } }
+</style>
+</head>
+<body data-mode="signs" data-view="wall">
+
+<header>
+  <div class="mast"><b>Typology Machine</b> &nbsp;·&nbsp; A Coruña &nbsp;·&nbsp; <span id="count">—</span></div>
+  <nav aria-label="View">
+    <button id="m-signs" aria-pressed="true">Signs</button>
+    <button id="m-shapes" aria-pressed="false">Shapes</button>
+    <button id="v-map" aria-pressed="false">Map</button>
+    <button id="bw" aria-pressed="false">B/W</button>
+    <button id="shuffle">Shuffle</button>
+  </nav>
+</header>
+
+<main class="wall" id="wall" aria-label="Signs"></main>
+<div class="more" id="more"></div>
+<div id="map"></div>
+
+<footer>
+  <span>Apple Look Around, 2026</span>
+  <span>SAM 3</span>
+  <span>DINOv2</span>
+</footer>
+
+<div class="detail" id="detail" role="dialog" aria-modal="true" aria-label="Sign">
+  <div class="top">
+    <div class="mast" id="d-id"></div>
+    <div class="arrows"><button id="prev">← prev</button><button id="next">next →</button><button id="close">close ✕</button></div>
+  </div>
+  <figure><img id="d-img" alt=""></figure>
+  <div class="info">
+    <div class="t" id="d-text"></div>
+    <div class="meta">
+      <span id="d-where"></span>
+      <span id="d-date"></span>
+      <span id="d-seen"></span>
+      <a id="d-map" href="#">map</a>
+      <a id="d-link" target="_blank" rel="noopener">Look Around ↗</a>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script>
+(async function () {
+  const $ = id => document.getElementById(id);
+  const wall = $('wall');
+  const { meta, signs } = await fetch('data.json').then(r => r.json());
+  let order = signs.map((_, i) => i), cur = -1, shown = 0;
+  const CHUNK = 300;
+  $('count').textContent = `${meta.n.toLocaleString('en')} signs`;
+
+  // ---- wall, rendered in chunks as you scroll
+  function tile(idx) {
+    const s = signs[idx];
+    const b = document.createElement('button');
+    b.className = 'tile'; b.dataset.i = idx;
+    b.style.setProperty('--m', `url("mask/${s.id}.png")`);
+    b.setAttribute('aria-label', s.t || s.b || 'sign');
+    b.innerHTML = `<img loading="lazy" src="img/${s.id}.jpg" width="${s.w}" height="${s.h}" alt=""><span class="mask" aria-hidden="true"></span>`;
+    b.addEventListener('click', () => open(signs[idx]));
+    return b;
+  }
+  function more() { const end = Math.min(order.length, shown + CHUNK); for (let k = shown; k < end; k++) wall.appendChild(tile(order[k])); shown = end; }
+  function render() { wall.innerHTML = ''; shown = 0; more(); }
+  new IntersectionObserver(es => { if (es[0].isIntersecting && shown < order.length) more(); }, { rootMargin: '1200px' }).observe($('more'));
+
+  // ---- modes
+  const modes = ['signs', 'shapes'];
+  function setMode(m) { document.body.dataset.mode = m; modes.forEach(x => $('m-' + x).setAttribute('aria-pressed', String(x === m))); }
+  modes.forEach(m => $('m-' + m).addEventListener('click', () => { setMode(m); setView('wall'); }));
+  $('bw').addEventListener('click', () => $('bw').setAttribute('aria-pressed', String(document.body.classList.toggle('bw'))));
+  $('shuffle').addEventListener('click', () => { for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; } render(); setView('wall'); });
+
+  // ---- map
+  let map = null, popup = null;
+  function setView(v) {
+    document.body.dataset.view = v;
+    $('v-map').setAttribute('aria-pressed', String(v === 'map'));
+    modes.forEach(x => $('m-' + x).setAttribute('aria-pressed', String(v === 'wall' && document.body.dataset.mode === x)));
+    if (v === 'map') { if (!map) buildMap(); else map.resize(); }
+  }
+  $('v-map').addEventListener('click', () => setView('map'));
+  function buildMap() {
+    map = new maplibregl.Map({ container: 'map', style: 'https://basemaps.cartocdn.com/gl/dark-matter-nolabels-gl-style/style.json',
+      center: [-8.4065, 43.3665], zoom: 14, attributionControl: { compact: true } });
+    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+    map.on('load', () => {
+      map.addSource('signs', { type: 'geojson', data: { type: 'FeatureCollection',
+        features: signs.map((s, i) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [s.lo, s.la] }, properties: { i } })) } });
+      map.addLayer({ id: 'signs', type: 'circle', source: 'signs', paint: {
+        'circle-color': '#d79a3a', 'circle-opacity': 0.85,
+        'circle-radius': ['interpolate', ['linear'], ['zoom'], 12, 1.2, 15, 2.5, 18, 6] } });
+      map.on('mouseenter', 'signs', () => map.getCanvas().style.cursor = 'pointer');
+      map.on('mouseleave', 'signs', () => map.getCanvas().style.cursor = '');
+      map.on('click', 'signs', e => {
+        const s = signs[e.features[0].properties.i];
+        if (popup) popup.remove();
+        popup = new maplibregl.Popup({ offset: 8, closeButton: false }).setLngLat([s.lo, s.la])
+          .setHTML(`<img src="img/${s.id}.jpg" alt=""><div>${esc(s.t || s.b || s.st || '')}</div>`).addTo(map);
+        popup.getElement().addEventListener('click', () => open(s));
+      });
+    });
+  }
+  function esc(t) { return (t || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+  // ---- detail
+  const detail = $('detail');
+  function open(s) {
+    cur = order.indexOf(signs.indexOf(s));
+    $('d-img').src = `img/${s.id}.jpg`;
+    $('d-text').textContent = s.t || s.b || '';
+    $('d-id').textContent = s.id;
+    $('d-where').textContent = [s.st, s.ba].filter(Boolean).join(' · ');
+    $('d-date').textContent = s.d;
+    $('d-seen').textContent = `${s.seen} views`;
+    $('d-link').href = s.u;
+    $('d-map').onclick = e => { e.preventDefault(); close(); setView('map'); const go = () => map.flyTo({ center: [s.lo, s.la], zoom: 18 }); map.loaded() ? go() : map.once('load', go); };
+    detail.setAttribute('open', ''); $('close').focus();
+  }
+  function close() { detail.removeAttribute('open'); }
+  function step(d) { if (cur < 0) return; open(signs[order[(cur + d + order.length) % order.length]]); }
+  $('close').addEventListener('click', close);
+  $('prev').addEventListener('click', () => step(-1));
+  $('next').addEventListener('click', () => step(1));
+  detail.addEventListener('click', e => { if (e.target === detail) close(); });
+  document.addEventListener('keydown', e => {
+    if (detail.hasAttribute('open')) { if (e.key === 'Escape') close(); if (e.key === 'ArrowRight') step(1); if (e.key === 'ArrowLeft') step(-1); }
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

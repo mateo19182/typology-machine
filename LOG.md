@@ -176,3 +176,15 @@ and are flagged "no sign found here": those are the years before the sign existe
 
 **Viewer.** A street-window stage with the year as a big numeral, a rail with one tick per capture
 placed by date (so gaps in coverage read as gaps), and dragging across the picture scrubs the years.
+
+## 2026-10-12 · morning
+
+**The history viewer is parked.** Scrolling through it, most timelines mix neighbouring signs: with the
+old panoramas' GPS error, a one-metre tolerance on the ray is not enough to tell a fascia from the
+poster column in front of it. Every crop already carries its capture date, so the years are kept and
+matching will come back with appearance in the loop, not geometry alone.
+
+**Off the artifact, onto the server.** The wall now lives at typology.m19182.dev: a static page served
+by caddy behind a Cloudflare tunnel, all 13.6k triangulated signs, a map of them, no manifesto. Also
+noticed the Google detector was CPU-bound with the GPU idle; three sharded detectors now keep the card
+at 100%.
