@@ -1,0 +1,9 @@
+[Unit]
+Description=Read-only Typology background progress and health check
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/mateo/projects/typology-machine
+ExecStart=/home/mateo/projects/typology-machine/.venv/bin/python -u explore/background_watch.py
+Nice=15
+TimeoutStartSec=90

@@ -690,3 +690,19 @@ source/barrio/text filters, raw observations, full-selection manifests, and stal
 responses after rapid search changes. API tests cover grouping before viewport
 filtering, date-based representative changes, exact legacy joins, accented text,
 complete streamed exports, invalid input and failed index publication.
+
+### Background checks
+
+`typology-background-watch.timer` runs the read-only `explore/background_watch.py`
+every five minutes. It writes `~/.local/state/typology-machine/background-status.json`
+and logs to `journalctl --user -u typology-background-watch.service`. Checks cover
+worker failures, progress in the disk copy, R2 upload and Apple OCR, disk space,
+timer state, and the local and public query API. Publication timers paused by the
+storage migration are expected. Upload/OCR inactivity is flagged after 30 minutes;
+migration inactivity after one hour, allowing time for inventory verification.
+Alerts make the check service fail; its timer continues checking. It never restarts
+workers, deletes data, or sends notifications to chat or external services.
+
+Install both `explore/services/typology-background-watch.*` files under
+`~/.config/systemd/user/`, run `systemctl --user daemon-reload`, then
+`systemctl --user enable --now typology-background-watch.timer`.
