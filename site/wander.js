@@ -88,7 +88,12 @@
   $('anchor-size').oninput=()=>{if(currentImage){place(currentImage,graph.items[index()]);save()}};
   $('outline').onchange=()=>{$('anchor').hidden=!$('outline').checked};
   stage.onclick=event=>{if(!currentImage)return;const r=stage.getBoundingClientRect();anchor=[Math.min(.85,Math.max(.15,(event.clientX-r.left)/r.width)),Math.min(.85,Math.max(.15,(event.clientY-r.top)/r.height))];place(currentImage,graph.items[index()]);save()};
-  stage.onkeydown=event=>{if(event.key==='ArrowRight'){event.preventDefault();$('next').click()}if(event.key==='ArrowLeft'){event.preventDefault();$('back').click()}};
+  document.addEventListener('keydown',event=>{
+    if(event.defaultPrevented||event.repeat||event.altKey||event.ctrlKey||event.metaKey||event.shiftKey)return;
+    if(event.target.closest('input,select,textarea,[contenteditable]:not([contenteditable="false"]),[role="textbox"]'))return;
+    const button=event.key==='ArrowRight'?$('next'):event.key==='ArrowLeft'?$('back'):null;
+    if(button){event.preventDefault();if(!button.disabled)button.click()}
+  });
   new ResizeObserver(()=>{if(currentImage)place(currentImage,graph.items[index()])}).observe(stage);
   $('share').onclick=async()=>{try{await navigator.clipboard.writeText(location.href);status.textContent='Journey link copied.'}catch{window.prompt('Copy journey link',location.href)}};
   async function init(){
