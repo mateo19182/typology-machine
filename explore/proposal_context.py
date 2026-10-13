@@ -2,7 +2,7 @@
 
 Run behind the static-site proxy:
   .venv/bin/python explore/proposal_context.py --host 127.0.0.1 --port 8793
-Only /proposal-context/<apple|gsv>/<12-hex-run>/<view>.jpg is served.
+Serves context JPEGs and crop geometry JSON under /proposal-context/.
 """
 import argparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -19,6 +19,7 @@ import pillow_heif
 
 pillow_heif.register_heif_opener()
 ROOT = Path(__file__).resolve().parent.parent
+GEOMETRY_ROUTE = re.compile(r'/proposal-context/(apple|gsv)/([a-f0-9]{12})/([A-Za-z0-9_-]{1,160})/([A-Za-z0-9_-]{1,160})\.json')
 ROUTE = re.compile(r'/proposal-context/(apple|gsv)/([a-f0-9]{12})/([A-Za-z0-9_-]{1,160})\.jpg')
 
 
@@ -28,6 +29,34 @@ class ContextStore:
         self.cache = Path(cache or self.base / 'proposal_context_cache').resolve()
         self.max_side = max_side
         self.decoding = threading.BoundedSemaphore(decoders)
+
+    def geometry(self, request_path):
+        match = GEOMETRY_ROUTE.fullmatch(urlsplit(request_path).path)
+        if not match:
+            raise FileNotFoundError('Unknown geometry route')
+        source, run, view, name = match.groups()
+        run_root = (self.base / source / 'multicategory').resolve()
+        # Published assets can point to a different contributing run. Read the
+        # result beside the actual crop, not an unpadded detector box or alias.
+        crop = (self.base / 'site/proposal-assets' / source / run / view / (name + '.jpg')).resolve()
+        if not crop.is_relative_to(run_root) or not crop.is_file():
+            raise FileNotFoundError('Crop unavailable')
+        relative = crop.relative_to(run_root).parts
+        if len(relative) != 4 or relative[1] != 'views' or not re.fullmatch(r'[a-f0-9]{12}', relative[0]):
+            raise FileNotFoundError('Unexpected crop location')
+        result = json.loads((crop.parent / 'result.json').read_text())
+        if result.get('source') != source or result.get('view_id') != crop.parent.name:
+            raise FileNotFoundError('Result identity does not match crop')
+        prediction = next((p for p in result.get('predictions', []) if Path(p.get('crop', '')).name == crop.name), None)
+        if prediction is None or not prediction.get('crop_box'):
+            raise FileNotFoundError('Crop geometry unavailable')
+        width, height = result['image_size']
+        left, top, right, bottom = prediction['crop_box']
+        if not (0 <= left < right <= width and 0 <= top < bottom <= height):
+            raise FileNotFoundError('Invalid crop geometry')
+        return {'context_url': f'/proposal-context/{source}/{relative[0]}/{crop.parent.name}.jpg',
+                'image_size': [width, height],
+                'crop_box': [left / width, top / height, right / width, bottom / height]}
 
     def get(self, request_path):
         match = ROUTE.fullmatch(urlsplit(request_path).path)
@@ -91,8 +120,12 @@ def handler_for(store):
 
         def serve_context(self, head=False):
             try:
-                target = store.get(self.path)
-                content = target.read_bytes()
+                geometry = GEOMETRY_ROUTE.fullmatch(urlsplit(self.path).path)
+                if geometry:
+                    content = json.dumps(store.geometry(self.path), separators=(',', ':')).encode()
+                else:
+                    target = store.get(self.path)
+                    content = target.read_bytes()
             except FileNotFoundError:
                 self.send_error(404, 'Context unavailable')
                 return
@@ -101,7 +134,7 @@ def handler_for(store):
                 self.send_error(500, 'Context could not be decoded')
                 return
             self.send_response(200)
-            self.send_header('Content-Type', 'image/jpeg')
+            self.send_header('Content-Type', 'application/json' if geometry else 'image/jpeg')
             self.send_header('Content-Length', str(len(content)))
             self.send_header('Cache-Control', 'public, max-age=604800, immutable')
             self.send_header('X-Content-Type-Options', 'nosniff')

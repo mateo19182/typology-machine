@@ -7,7 +7,67 @@ const safeURL = value => { try { const u = new URL(value, location.href); return
 function valid(item) { return item && typeof item.letter === 'string' && [...item.letter].length === 1 && typeof item.image === 'string' && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(item.image) && item.image.length < 500000 && typeof item.id === 'string'; }
 try { const saved = JSON.parse(localStorage.getItem(KEY) || '[]'); if (Array.isArray(saved)) letters = saved.filter(valid).slice(0, 500); } catch {}
 function persist() { try { localStorage.setItem(KEY, JSON.stringify(letters)); return true; } catch { $('save-status').textContent = 'Browser storage is full. Download your alphabet to keep these letters.'; return false; } }
+const contextCache = new Map();
+let contextIntent = null, contextTimer = null, contextSerial = 0;
+function closeContext() {
+  clearTimeout(contextTimer); contextSerial++;
+  if (contextIntent) contextIntent.classList.remove('previewing');
+  contextIntent = null; $('letter-context').hidden = true;
+}
+function contextRoute(item) {
+  const match = /^\/proposal-assets\/(apple|gsv)\/([a-f0-9]{12})\/([A-Za-z0-9_-]{1,160})\/([A-Za-z0-9_-]{1,160})\.jpg$/.exec(item.crop || '');
+  return match ? `/proposal-context/${match[1]}/${match[2]}/${match[3]}/${match[4]}.json` : null;
+}
+async function revealContext(link, item) {
+  closeContext(); contextIntent = link; const serial = contextSerial;
+  const route = contextRoute(item), rect = item.rect;
+  if (!route || !Array.isArray(rect) || rect.length !== 4 || !rect.every(Number.isFinite) || rect[2] <= 0 || rect[3] <= 0 || rect[0] < 0 || rect[1] < 0 || rect[0]+rect[2] > 1.001 || rect[1]+rect[3] > 1.001) { link.dataset.contextUnavailable='true'; closeContext(); return; }
+  try {
+    if (!contextCache.has(route)) {
+      if (contextCache.size >= 32) contextCache.delete(contextCache.keys().next().value);
+      contextCache.set(route, fetch(route).then(r=>{if(!r.ok)throw Error();return r.json();}));
+    }
+    const geometry = await contextCache.get(route);
+    if (serial !== contextSerial || contextIntent !== link) return;
+    if (!Array.isArray(geometry.crop_box) || geometry.crop_box.length !== 4 || !geometry.crop_box.every(Number.isFinite) || !/^\/proposal-context\/(apple|gsv)\/[a-f0-9]{12}\/[A-Za-z0-9_-]+\.jpg$/.test(geometry.context_url)) throw Error();
+    const [left,top,right,bottom] = geometry.crop_box;
+    const bounds = [left+rect[0]*(right-left), top+rect[1]*(bottom-top), rect[2]*(right-left), rect[3]*(bottom-top)];
+    if (bounds[2] <= 0 || bounds[3] <= 0) throw Error();
+    const image = new Image();
+    await new Promise((resolve,reject)=>{image.onload=resolve;image.onerror=reject;image.src=geometry.context_url;});
+    if (serial !== contextSerial || contextIntent !== link || !link.isConnected) return;
+    const tile = link.querySelector('img'), box = tile.getBoundingClientRect();
+    const scale = Math.min(box.width/tile.naturalWidth,box.height/tile.naturalHeight);
+    const width = tile.naturalWidth*scale, height = tile.naturalHeight*scale;
+    const x = box.left+(box.width-width)/2, y = box.top+(box.height-height)/2;
+    const photo = $('letter-context-image'); photo.src=image.src;
+    const photoScale=Math.min(width/(bounds[2]*image.naturalWidth),height/(bounds[3]*image.naturalHeight));
+    const photoWidth=image.naturalWidth*photoScale, photoHeight=image.naturalHeight*photoScale;
+    photo.style.width=photoWidth+'px';photo.style.height=photoHeight+'px';
+    photo.style.left=x+width/2-(bounds[0]+bounds[2]/2)*photoWidth+'px';
+    photo.style.top=y+height/2-(bounds[1]+bounds[3]/2)*photoHeight+'px';
+    $('letter-context-caption').textContent=`${item.letter} · ${item.text || 'Sign'} · Source photo © ${item.crop.includes('/gsv/')?'Google':'Apple'} · Escape to close`;
+    link.classList.add('previewing'); $('letter-context').hidden=false;
+  } catch {
+    contextCache.delete(route);
+    if (serial === contextSerial) {link.dataset.contextUnavailable='true';closeContext();}
+  }
+}
+function bindContext(link,item) {
+  link.addEventListener('pointerenter',e=>{if(e.pointerType==='touch')return;clearTimeout(contextTimer);contextTimer=setTimeout(()=>revealContext(link,item),150);});
+  link.addEventListener('pointerleave',e=>{if(e.pointerType==='touch')return;clearTimeout(contextTimer);if(contextIntent===link)closeContext();});
+  link.addEventListener('focus',()=>revealContext(link,item));
+  link.addEventListener('blur',()=>{if(contextIntent===link)closeContext();});
+  let touch=false, touchWasPreview=false;
+  link.addEventListener('pointerdown',e=>{touch=e.pointerType==='touch';touchWasPreview=contextIntent===link&&!$('letter-context').hidden;});
+  link.addEventListener('click',e=>{if(touch&&!touchWasPreview&&!link.dataset.contextUnavailable){e.preventDefault();if(contextIntent!==link)revealContext(link,item);}else if(touch){closeContext();}touch=false;});
+}
+$('letter-context-close').onclick=closeContext;
+document.addEventListener('pointerdown',e=>{if(contextIntent&&!e.target.closest('.glyph')&&!e.target.closest('#letter-context-close'))closeContext();});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeContext();});
+window.addEventListener('scroll',closeContext,{passive:true});window.addEventListener('resize',closeContext);
 function render() {
+  closeContext();
   const poster = $('poster'); poster.replaceChildren(); $('print-sources').replaceChildren();
   let collected = 0, total = 0; const used = new Map();
   for (const word of $('sentence').value.toUpperCase().split(/\s+/)) {
@@ -16,7 +76,7 @@ function render() {
       total++; const choices = letters.filter(l => l.letter.toUpperCase() === letter), item = choices[Math.floor(Math.random() * choices.length)];
       if (!item) { const el = document.createElement('span'); el.className = 'placeholder'; el.textContent = letter; el.title = `Collect ${letter} to replace this placeholder`; span.append(el); continue; }
       collected++; const link = document.createElement('a'); link.className = 'glyph'; link.href = safeURL(item.source) || `index.html#layers=store_sign,street_name_plate&q=${encodeURIComponent(item.text || '')}`; link.target = '_blank'; link.rel = 'noopener'; link.title = `${letter} · ${item.text || 'Sign'}${item.estimated ? ' · OCR character, check before using' : ''}`;
-      const img = new Image(); img.src = item.image; img.alt = letter; link.append(img); span.append(link); used.set(item.id, item);
+      const img = new Image(); img.src = item.image; img.alt = letter; link.append(img); bindContext(link,item); span.append(link); used.set(item.id, item);
     } poster.append(span);
   }
   $('coverage').textContent = `${collected} of ${total} letters from signs · ${letters.length} saved variants${letters.some(l => l.estimated) ? ' · Starter letters use OCR character alignment. Inspect and trim any incorrect letters.' : ''}`;

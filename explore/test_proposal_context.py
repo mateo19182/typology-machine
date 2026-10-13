@@ -64,6 +64,39 @@ class ContextTest(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             self.store.get(self.route)
 
+    def test_geometry_uses_exact_crop_padding_and_exposes_no_paths(self):
+        crop = self.root / 'store_sign-0-0.jpg'
+        Image.new('RGB', (160, 260)).save(crop)
+        self.result['predictions'] = [{'crop': str(crop), 'box': [100,200,200,400],
+                                       'crop_box': [80,180,240,440]}]
+        self.write_result()
+        published = self.base / 'site/proposal-assets/apple' / self.run / self.view
+        published.mkdir(parents=True)
+        (published / crop.name).symlink_to(crop)
+        route = f'/proposal-context/apple/{self.run}/{self.view}/store_sign-0-0.json'
+        with patch('proposal_context.Image.open', side_effect=AssertionError('Geometry must not decode images')):
+            result = self.store.geometry(route)
+        self.assertEqual(result['crop_box'], [80/600,180/1000,240/600,440/1000])
+        self.assertEqual(result['context_url'], self.route)
+        self.assertEqual(set(result), {'crop_box','image_size','context_url'})
+        self.assertNotIn(str(self.base), json.dumps(result))
+        alias = self.base / 'site/proposal-assets/apple/111111111111/alias_view'
+        alias.mkdir(parents=True)
+        (alias / crop.name).symlink_to(crop)
+        aliased = self.store.geometry('/proposal-context/apple/111111111111/alias_view/store_sign-0-0.json')
+        self.assertEqual(aliased, result)
+        self.result['predictions'] = []
+        self.write_result()
+        with self.assertRaises(FileNotFoundError):
+            self.store.geometry(route)
+
+    def test_geometry_rejects_unknown_paths(self):
+        for route in ['/proposal-context/apple/../../secret.json',
+                      f'/proposal-context/apple/{self.run}/{self.view}/missing.json',
+                      f'/proposal-context/apple/{self.run}/{self.view}/../secret.json']:
+            with self.assertRaises(FileNotFoundError):
+                self.store.geometry(route)
+
     def test_gsv_recuts_perspective(self):
         root = self.base / 'gsv/multicategory' / self.run
         view = root / 'views/gsv_90'
