@@ -91,7 +91,10 @@
   function updateSelection(snapshot){pointSelection=null;return refreshVisible(snapshot);}
   function updateCounts(){
     const busy=queryBusy||refreshing,total=result?.total||0;
-    $('count').textContent=`${total.toLocaleString()} ${grouped()?t('items'):t('observations')}${busy?' · '+t('loading…'):''}`;
+    // Loading text must not wrap the mobile masthead: resizing the map emits moveend and starts another query.
+    $('count').textContent=`${total.toLocaleString()} ${grouped()?t('items'):t('observations')}`;
+    $('count').setAttribute('aria-busy',String(busy));
+    $('count').title=busy?t('Loading selected layers…'):'';
     $('layer-summary').textContent=`${t('Filters')} · ${enabled.size}`;
     const f=currentFilters(), names=[...enabled].map(id=>t(categories.get(id)?.label||id));
     const summary=[`${t('Minimum confidence')} ${f.confidence}`,names.join(', ')||t('No categories'),f.query?`“${f.query}”`:null,barrios.find(b=>b.id===f.barrio)?.name||(f.barrio==='outside'?t('Outside mapped barrios'):null),f.source?$('source-filter').selectedOptions[0].textContent:null,f.from!==$('year-from').min||f.to!==$('year-to').max?`${f.from}–${f.to}`:null,!f.unknown?t('Capture date known'):null,f.area?t('Only this map area'):null,!f.grouped?t('observations'):null].filter(Boolean).join(' · ');

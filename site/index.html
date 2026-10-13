@@ -20,6 +20,7 @@ a { color: inherit }
 header { padding: 14px 16px 10px; display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: baseline; justify-content: space-between; border-bottom: 1px solid var(--line); flex: none }
 .mast { letter-spacing: .18em; text-transform: uppercase; color: var(--dim); white-space: nowrap }
 .mast b { color: var(--fg); font-weight: 400 }
+#count[aria-busy="true"] { opacity: .55 }
 nav a { text-decoration:none; }
 nav { display: flex; gap: 14px; flex-wrap: wrap }
 nav a, nav button, .detail button, .detail a.btn { font: inherit; background: none; border: 0; color: var(--dim); cursor: pointer; padding: 2px 0; letter-spacing: .08em; text-transform: uppercase; border-bottom: 1px solid transparent }
@@ -205,6 +206,6 @@ body[data-view="map"] #shuffle { display:none; }body[data-view="map"] #focus-res
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="crop-storage.js"></script>
-<script src="app.js?v=035cfe480c5e"></script>
+<script src="app.js?v=8f89f8b78af1"></script>
 </body>
 </html>
