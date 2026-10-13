@@ -68,8 +68,8 @@ def main():
     args = ap.parse_args()
     if not 1 <= args.limit <= 1500:
         ap.error('--limit must be between 1 and 1500')
-    if not 1 <= args.variants <= 16:
-        ap.error('--variants must be between 1 and 16')
+    if not 1 <= args.variants <= 40:
+        ap.error('--variants must be between 1 and 40')
     os.environ.setdefault('OMP_NUM_THREADS', '2')
     os.environ.setdefault('OPENBLAS_NUM_THREADS', '1')
     import cv2
@@ -88,7 +88,7 @@ def main():
     candidates = []
     seen = set()
     # Round-robin searches keep rare characters represented in a larger sample.
-    queries = ['k', 'w', 'x', 'j', 'ñ', 'z', 'farmacia', 'coruña', 'bar', '']
+    queries = ['k', 'w', 'x', 'j', 'ñ', 'z', 'q', 'á', 'ú', 'ü', '0', 'farmacia', 'coruña', 'bar', '']
     for offset in range(0, 240, 80):
         batches = [api('/api/query', layers='store_sign,street_name_plate', confidence='.65',
                        q=query, limit=80, offset=offset, map=0)['items'] for query in queries]

@@ -125,17 +125,15 @@ $('restore').onchange = async e => { try { const file=e.target.files[0]; if (!fi
 renderCollection();render();search();
 fetch('alphabet-data.json', {cache:'no-cache'}).then(r=>r.ok?r.json():null).then(data=>{
   if (!data || !Array.isArray(data.letters)) return;
-  const starter = data.letters.filter(valid).slice(0,500);
-  if (!letters.length) { letters=starter;persist();renderCollection();render();return; }
-  const key = item => item.letter+'|'+item.id+'|'+item.image;
-  const existing = new Set(letters.map(key)), additions = starter.filter(item=>!existing.has(key(item)));
-  if (!additions.length) return;
-  $('add-starter').hidden=false; $('add-starter').textContent=`Add ${additions.length} new starter letters`;
-  $('add-starter').onclick=()=>{
-    const current = new Set(letters.map(key));
-    const available = Math.max(0,500-letters.length), added=starter.filter(item=>!current.has(key(item))).slice(0,available);
-    letters.push(...added);const stored=persist();renderCollection();render();$('add-starter').hidden=true;
-    if(stored)$('save-status').textContent=`Added ${added.length} starter letters. Your existing letters are preserved.`;
-  };
+  const starter = data.letters.filter(valid).slice(0,500), revision = String(data.revision || starter.length);
+  let seen = null; try { seen = localStorage.getItem(KEY+'-starter'); } catch {}
+  if (letters.length && seen === revision) return;
+  // A new starter revision replaces the previous OCR letters; letters the visitor saved or trimmed stay.
+  const own = letters.filter(item=>!item.estimated), added = starter.slice(0,Math.max(0,500-own.length));
+  const before = letters.filter(item=>item.estimated).length;
+  letters = [...own,...added];
+  if (persist()) { try { localStorage.setItem(KEY+'-starter', revision); } catch {} }
+  renderCollection();render();
+  if (before && added.length !== before) $('save-status').textContent=`Starter alphabet updated to ${added.length} letters. Your own letters are preserved.`;
 }).catch(()=>{});
 })();

@@ -47,13 +47,13 @@
       const selection=params(),data=await json('/api/query?'+selection);
       if(current!==generation)return;
       const perPage=Number($('density').value),pageCount=Math.ceil(data.items.length/perPage);
-      const title=$('title').value.trim()||'A Coruña, collected';
+      const title=$('title').value.trim();
       const category=selectedCategories().map(id=>labels.get(id)).join(', ');
       const subtitle=[category,$('query').value.trim()?`Words: ${$('query').value.trim()}`:'',$('barrio').value?$('barrio').selectedOptions[0].textContent:'A Coruña',`Confidence ≥ ${$('confidence').value}`,($('from').value||$('to').value)?`${$('from').value||'Any year'}–${$('to').value||'present'}${$('unknown').checked?' + undated':''}`:!$('unknown').checked?'Known dates only':''].filter(Boolean).join(' · ');
       const fragment=document.createDocumentFragment(),images=[];captionViews=[];
       for(let page=0;page<pageCount;page++){
         const sheet=el('article',undefined,'sheet'),heading=el('div',undefined,'sheet-heading');
-        heading.append(el('h2',title),el('span',`${page+1} / ${pageCount}`,'folio'));sheet.append(heading,el('p',subtitle,'sheet-subtitle'));
+        const name=el('h2',title);name.hidden=!title;heading.append(name,el('span',`${page+1} / ${pageCount}`,'folio'));sheet.append(heading,el('p',subtitle,'sheet-subtitle'));
         const grid=el('div',undefined,'sheet-grid');grid.style.setProperty('--cols',perPage===6?2:perPage===12?3:4);grid.style.setProperty('--rows',perPage===6?3:perPage===12?4:5);
         for(const [index,item] of data.items.slice(page*perPage,(page+1)*perPage).entries()){
           const figure=el('figure'),anchor=el('a');
@@ -81,7 +81,7 @@
   $('print').addEventListener('click',()=>window.print());
   $('settings').addEventListener('input',event=>{
     if(event.target.hasAttribute('data-caption-field')){updateCaptions();return;}
-    if(event.target.id==='title'){document.querySelectorAll('.sheet h2').forEach(node=>{node.textContent=$('title').value.trim()||'A Coruña, collected';});return;}
+    if(event.target.id==='title'){const title=$('title').value.trim();document.querySelectorAll('.sheet h2').forEach(node=>{node.textContent=title;node.hidden=!title;});return;}
     categorySummary();$('print').disabled=true;status.textContent='Settings changed. Compose the book to update the preview.';
   });
   $('reset-captions').addEventListener('click',()=>{captionEdits.clear();updateCaptions();});
