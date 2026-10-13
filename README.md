@@ -9,6 +9,16 @@ running log of what we know and what's open. `IDEAS.md` and `PRIOR_ART.md` are r
 ## Setup
 `uv sync`. Put `MAPILLARY_TOKEN='MLY|...'` in `.env` (quoted: the token contains `|`). `data/` is gitignored.
 
+The dataset is being migrated to `/mnt/data/projects/typology-machine/data`.
+The repository's `data` path will be a symlink so saved paths and services keep
+working. The migration copies with rsync transfer checksums and preserved hard
+links, pauses writers for a final sync, checks the file inventory and a read-back
+sample, then switches paths. It removes the old copy only after site and crop
+health checks. Migration state and logs are under
+`~/.local/state/typology-machine/storage-migration.*`.
+Original imagery, masks, detections, OCR, and review evidence are retained.
+
+
 ## Scripts
 - `explore/coverage.py` pulls Mapillary image points and its detected objects for a city bbox.
 - `explore/contact_sheet.py` random sample of Mapillary images, stratified by year and pano.

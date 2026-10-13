@@ -325,3 +325,21 @@ Newer Google downloads continue locally and are outside this frozen inventory.
 - Existing 30 unittest cases and four new backfill/handoff cases passed. JavaScript
   and shell syntax checks and systemd unit verification passed. GPU backfill
   inference is queued, not yet smoke-tested on the GPU.
+
+
+## 2026-10-13: data disk migration
+
+- User authorized moving project data to `/mnt/data` and removing clearly redundant
+  material. Destination: `/mnt/data/projects/typology-machine/data`, with the old
+  repository `data` path retained as a symlink after verification.
+- Removed 52 generated map snapshots, retaining the eight newest and the live
+  manifest. Freed 26.0 GB decimal. Removed 4,408 completed rental staging image
+  links only after confirming they were hard links to retained Google originals.
+  Frozen inventories, provenance and rental logs remain.
+- `typology-storage-migration.service` performs the copy, final writer pause and
+  sync, inventory/read-back verification, path switch, HTTP health checks, and
+  removal of the verified old copy. It preserves copies on failure. Progress:
+  `~/.local/state/typology-machine/storage-migration.json` and `.log`.
+- Refresh and follow-up timers are paused during the initial copy; backfill and
+  OCR continue. The migration resumes timers and any paused writers after the
+  switch. No original imagery, detections, masks, OCR, or reviewed groups deleted.

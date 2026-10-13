@@ -1,5 +1,6 @@
 .env
-data/
+/data
+/data.before-storage-move
 .venv/
 __pycache__/
 *.pyc
