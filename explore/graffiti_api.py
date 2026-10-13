@@ -29,7 +29,7 @@ def validate_request(data):
 
 class Jobs:
     def __init__(self,home):
-        self.home=home;self.lock=threading.Lock();self.jobs={};self.active=None;self.last_started=0
+        self.home=home;self.lock=threading.Lock();self.jobs={};self.active=None
         (home/'generated').mkdir(parents=True,exist_ok=True)
     def training(self):
         try: value=json.loads((self.home/'training.json').read_text())
@@ -39,9 +39,8 @@ class Jobs:
         with self.lock:
             if self.training().get('stage')!='trained': return 503,{'error':'The archive model is still being prepared.'}
             if self.active: return 429,{'error':'The GPU is making another image. Try again shortly.'}
-            if time.monotonic()-self.last_started<60: return 429,{'error':'Please wait a minute between images.'}
             job=uuid.uuid4().hex
-            self.jobs[job]={'id':job,'stage':'running',**params,'created':time.time()};self.active=job;self.last_started=time.monotonic()
+            self.jobs[job]={'id':job,'stage':'running',**params,'created':time.time()};self.active=job
             threading.Thread(target=self.run,args=(job,params),daemon=True).start()
             return 202,dict(self.jobs[job])
     def run(self,job,params):

@@ -20,7 +20,7 @@ class GraffitiTests(unittest.TestCase):
                 self.assertEqual(jobs.start(params)[0],202)
                 self.assertEqual(jobs.start(params)[0],429)
                 jobs.active=None
-                self.assertEqual(jobs.start(params)[0],429)
+                self.assertEqual(jobs.start(params)[0],202)
     def test_status_never_exposes_paths_or_tracebacks(self):
         with tempfile.TemporaryDirectory() as temp:
             (Path(temp)/'training.json').write_text(json.dumps({'stage':'failed','error':'/private/path','step':3}))

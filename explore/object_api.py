@@ -351,7 +351,7 @@ def page_rows(db, f, box, limit, offset, seed=0):
     items = []
     for r in rows[:limit]:
         row = payload(db, r['id'])
-        keys = ('id', 'category', 'la', 'lo', 'w', 'h', 'crop', 'barrio', 'barrio_id', 'text', 't', 'cluster_color', 'legacy_record')
+        keys = ('id', 'category', 'la', 'lo', 'w', 'h', 'crop', 'barrio', 'barrio_id', 'text', 't', 'cluster_color', 'legacy_record', 'd', 'source')
         item = {k: row[k] for k in keys if k in row}
         for k in ('text', 't'):
             if k in item:

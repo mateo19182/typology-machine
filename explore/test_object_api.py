@@ -99,6 +99,8 @@ class ObjectAPITest(unittest.TestCase):
         self.assertEqual(first['visible'], 68)
         self.assertEqual(sum(c['count'] for c in first['cells']), 68)
         self.assertEqual(len(first['items']), 48)
+        self.assertTrue(all('source' in item for item in first['items']))
+        self.assertEqual(next(item for item in first['items'] if item['id'] == 'a')['d'], '2026-01-01')
         self.assertTrue(first['has_more'])
         second = self.request(offset=48, view='wall')
         self.assertEqual(len(second['items']), 20)

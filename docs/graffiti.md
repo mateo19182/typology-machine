@@ -67,8 +67,8 @@ Install `explore/services/typology-graffiti.service` as a user service after adj
 - `GET /api/graffiti/jobs/<id>` polls the request.
 - `GET /api/graffiti/images/<id>.png` serves completed images.
 
-There is one active request globally, no waiting queue, and a one-minute cooldown. Each request has fixed 512px resolution, 24 inference steps and a four-minute timeout. The worker starts a short-lived inference subprocess with CPU offload so model weights do not reserve GPU memory between images. Only the newest 200 PNG outputs remain; shared settings do not promise permanent image hosting. The frontend never generates merely from opening a shared link.
+There is one active request globally and no waiting queue or time-based cooldown. A new request can start immediately after the previous one finishes. Each request has fixed 512px resolution, 24 inference steps and a four-minute timeout. The worker starts a short-lived inference subprocess with CPU offload so model weights do not reserve GPU memory between images. Only the newest 200 PNG outputs remain; shared settings do not promise permanent image hosting. The frontend never generates merely from opening a shared link.
 
 Compare archive influence 0 and 0.8 with the same prompt and seed. This prototype does not reliably spell words, prove novelty, or guarantee a recognisable local style. It needs broader visual evaluation before expanding training. The generation pipeline retains the base model's safety checker.
 
-Validation: `python -m unittest discover -s explore -p 'test_graffiti_api.py'` covers request limits, training gates, single-job/cooldown enforcement and status redaction. Actual 512px base and LoRA image generation and browser form/polling/mobile checks were also exercised.
+Validation: `python -m unittest discover -s explore -p 'test_graffiti_api.py'` covers request limits, training gates, single-job enforcement, immediate subsequent requests and status redaction. Actual 512px base and LoRA image generation and browser form/polling/mobile checks were also exercised.

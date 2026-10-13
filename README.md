@@ -17,7 +17,7 @@ of the filtered records. Detections and OCR are experimental, not verified label
 
 - **Visual wandering** follows saved visual matches between real street photos, holding the detected object at a fixed screen position during each crossfade. The initial graph samples 2,500 objects; no model runs while browsing.
 - **Coruña alphabet** composes text from an editable starter of recognized letters on real signs. [Alphabet setup and limitations](docs/alphabet.md).
-- **Living typology book** creates printable A4 contact sheets with object links and PDF output through browser print.
+- **Living typology book** creates printable A4 contact sheets with category, date, source and neighbourhood filters, editable captions, object links and PDF output through browser print.
 - **Graffiti generator** runs a local SD 1.5 LoRA trained on 225 selected crops, with 29 held out. This is an early experiment, not an established quality improvement. [Training and serving](docs/graffiti.md).
 
 Build the wandering graph from an existing query index and locally cached DINOv2 model:

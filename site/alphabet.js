@@ -5,7 +5,7 @@ let letters = [], selection = null, selected = null, sourceImage = null, start =
 const canvas = $('editor'), ctx = canvas.getContext('2d');
 const safeURL = value => { try { const u = new URL(value, location.href); return ['http:', 'https:'].includes(u.protocol) ? u.href : ''; } catch { return ''; } };
 function valid(item) { return item && typeof item.letter === 'string' && [...item.letter].length === 1 && typeof item.image === 'string' && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(item.image) && item.image.length < 500000 && typeof item.id === 'string'; }
-try { const saved = JSON.parse(localStorage.getItem(KEY) || '[]'); if (Array.isArray(saved)) letters = saved.filter(valid).slice(0, 300); } catch {}
+try { const saved = JSON.parse(localStorage.getItem(KEY) || '[]'); if (Array.isArray(saved)) letters = saved.filter(valid).slice(0, 500); } catch {}
 function persist() { try { localStorage.setItem(KEY, JSON.stringify(letters)); return true; } catch { $('save-status').textContent = 'Browser storage is full. Download your alphabet to keep these letters.'; return false; } }
 function render() {
   const poster = $('poster'); poster.replaceChildren(); $('print-sources').replaceChildren();
@@ -55,13 +55,27 @@ async function search(more=false) {
 }
 $('save').onclick = () => {
   const letter = $('letter').value.trim().toUpperCase(); if ([...letter].length !== 1 || !sourceImage || !selection || selection[2]*sourceImage.width < 3 || selection[3]*sourceImage.height < 3) { $('save-status').textContent = 'Select a letter at least 3 pixels wide and tall, and enter one character.'; return; }
-  if (letters.length >= 300) { $('save-status').textContent = 'Alphabet limit reached. Remove a variant first.'; return; }
+  if (letters.length >= 500) { $('save-status').textContent = 'Alphabet limit reached. Remove a variant first.'; return; }
   const [x,y,w,h] = selection, out = document.createElement('canvas'); out.height = Math.min(160,Math.round(h*sourceImage.height)); out.width = Math.min(320,Math.round(out.height*w*sourceImage.width/(h*sourceImage.height))); out.width = Math.max(1,out.width);
   try { out.getContext('2d').drawImage(sourceImage,x*sourceImage.width,y*sourceImage.height,w*sourceImage.width,h*sourceImage.height,0,0,out.width,out.height); letters.push({letter,image:out.toDataURL('image/png'),id:selected.id,text:selected.text || selected.t || '',source:selected.source || '',crop:selected.crop,rect:selection.slice()}); const saved = persist(); renderCollection(); render(); if (saved) $('save-status').textContent = `${letter} saved. Collect another letter or another version.`; } catch { $('save-status').textContent = 'This image cannot be exported. Try another sign.'; }
 };
 $('sentence').oninput = render; $('shuffle').onclick = render; $('print').onclick = () => window.print(); $('search-form').onsubmit = e => { e.preventDefault(); search(); }; $('more').onclick = () => search(true);
 $('backup').onclick = () => { const url = URL.createObjectURL(new Blob([JSON.stringify({version:1,letters},null,2)],{type:'application/json'})); const a = document.createElement('a'); a.href=url;a.download='coruna-alphabet.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000); };
-$('restore').onchange = async e => { try { const file=e.target.files[0]; if (!file) return; if (file.size>12000000) throw Error(); const data=JSON.parse(await file.text()); if(data.version!==1 || !Array.isArray(data.letters) || data.letters.length>300 || !data.letters.every(valid)) throw Error(); letters=data.letters;persist();renderCollection();render();$('save-status').textContent='Alphabet imported.'; } catch { $('save-status').textContent='Could not import this alphabet. Use a downloaded alphabet JSON file.'; } e.target.value=''; };
+$('restore').onchange = async e => { try { const file=e.target.files[0]; if (!file) return; if (file.size>12000000) throw Error(); const data=JSON.parse(await file.text()); if(data.version!==1 || !Array.isArray(data.letters) || data.letters.length>500 || !data.letters.every(valid)) throw Error(); letters=data.letters;const stored=persist();renderCollection();render();if(stored)$('save-status').textContent='Alphabet imported.'; } catch { $('save-status').textContent='Could not import this alphabet. Use a downloaded alphabet JSON file.'; } e.target.value=''; };
 renderCollection();render();search();
-if (!letters.length) fetch('alphabet-data.json').then(r=>r.ok?r.json():null).then(data=>{ if(data && Array.isArray(data.letters) && !letters.length){letters=data.letters.filter(valid).slice(0,300);persist();renderCollection();render();}}).catch(()=>{});
+fetch('alphabet-data.json', {cache:'no-cache'}).then(r=>r.ok?r.json():null).then(data=>{
+  if (!data || !Array.isArray(data.letters)) return;
+  const starter = data.letters.filter(valid).slice(0,500);
+  if (!letters.length) { letters=starter;persist();renderCollection();render();return; }
+  const key = item => item.letter+'|'+item.id+'|'+item.image;
+  const existing = new Set(letters.map(key)), additions = starter.filter(item=>!existing.has(key(item)));
+  if (!additions.length) return;
+  $('add-starter').hidden=false; $('add-starter').textContent=`Add ${additions.length} new starter letters`;
+  $('add-starter').onclick=()=>{
+    const current = new Set(letters.map(key));
+    const available = Math.max(0,500-letters.length), added=starter.filter(item=>!current.has(key(item))).slice(0,available);
+    letters.push(...added);const stored=persist();renderCollection();render();$('add-starter').hidden=true;
+    if(stored)$('save-status').textContent=`Added ${added.length} starter letters. Your existing letters are preserved.`;
+  };
+}).catch(()=>{});
 })();
