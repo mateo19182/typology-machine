@@ -3,6 +3,7 @@ import argparse
 from collections import Counter
 import hashlib
 import json
+import os
 from pathlib import Path
 import random
 import sqlite3
@@ -38,7 +39,7 @@ def prepare(site, output):
             selected.append({'id': row['id'], 'source': row['source'], 'pano': pano, 'date': row['date'],
                              'path': str(original), 'sampling_hint': layer['id'], 'detector_prompt': row['prompt'],
                              'detector_score': row['score'], 'view_id': row['view_id'], 'run_id': manifest['run_id'],
-                             'context_url': 'http://100.83.166.6:8790' + row['raw']})
+                             'context_url': os.environ.get('TYPOLOGY_PUBLIC_URL', 'http://127.0.0.1:8790').rstrip('/') + row['raw']})
             picked += 1
             if picked == count:
                 break

@@ -11,6 +11,7 @@ from functools import lru_cache
 import hashlib
 import itertools
 import json
+import os
 import math
 from pathlib import Path
 import threading
@@ -41,7 +42,7 @@ def rows_from_run(run, categories):
             if p['category_proposal'] not in categories:continue
             rows.append(dict(p,source=r['source'],view_id=r['view_id'],pano=str(m['id']),
                              lat=float(m['lat']),lon=float(m['lon']),date=str(m['date'])[:10],
-                             raw=f"http://100.83.166.6:8790/proposal-context/{r['source']}/{run.name}/{r['view_id']}.jpg"))
+                             raw=os.environ.get("TYPOLOGY_PUBLIC_URL", "http://127.0.0.1:8790").rstrip("/")+f"/proposal-context/{r['source']}/{run.name}/{r['view_id']}.jpg"))
     return rows
 
 

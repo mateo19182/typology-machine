@@ -2,9 +2,10 @@
 Description=Typology proposal context JPEG cache
 
 [Service]
+EnvironmentFile=-%h/.config/typology-machine/deployment.env
 Type=simple
-WorkingDirectory=/home/mateo/projects/typology-machine
-ExecStart=/home/mateo/projects/typology-machine/.venv/bin/python -u explore/proposal_context.py --host 127.0.0.1 --port 8793 --decoders 1
+WorkingDirectory=%h/projects/typology-machine
+ExecStart=%h/projects/typology-machine/.venv/bin/python -u explore/proposal_context.py --host 127.0.0.1 --port 8793 --decoders 1
 Environment=OPENBLAS_NUM_THREADS=1
 Environment=OMP_NUM_THREADS=1
 Restart=on-failure

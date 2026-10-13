@@ -3,8 +3,9 @@ Description=Typology map and gallery queries
 After=network.target
 
 [Service]
-WorkingDirectory=/home/mateo/projects/typology-machine
-ExecStart=/home/mateo/projects/typology-machine/.venv/bin/python -u explore/object_api.py serve
+EnvironmentFile=-%h/.config/typology-machine/deployment.env
+WorkingDirectory=%h/projects/typology-machine
+ExecStart=%h/projects/typology-machine/.venv/bin/python -u explore/object_api.py serve
 Restart=on-failure
 RestartSec=3
 

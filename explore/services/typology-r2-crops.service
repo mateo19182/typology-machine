@@ -1,11 +1,12 @@
 [Unit]
 Description=Publish referenced Typology crops to R2 and verify public delivery
-ConditionPathExists=/home/mateo/.config/typology-machine/r2.env
+ConditionPathExists=%h/.config/typology-machine/r2.env
 
 [Service]
+EnvironmentFile=-%h/.config/typology-machine/deployment.env
 Type=oneshot
-WorkingDirectory=/home/mateo/projects/typology-machine
-ExecStart=/home/mateo/projects/typology-machine/.venv/bin/python -u explore/publish_crops_r2.py --activate --workers 32
+WorkingDirectory=%h/projects/typology-machine
+ExecStart=%h/projects/typology-machine/.venv/bin/python -u explore/publish_crops_r2.py --activate --workers 32
 Nice=10
 TimeoutStartSec=infinity
 Restart=on-failure

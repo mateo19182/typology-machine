@@ -1,10 +1,11 @@
 [Unit]
 Description=Conservative CPU duplicate proposals for current Apple observations
 [Service]
+EnvironmentFile=-%h/.config/typology-machine/deployment.env
 Type=oneshot
-WorkingDirectory=/home/mateo/projects/typology-machine
-ExecStart=/home/mateo/projects/typology-machine/.venv/bin/python -u explore/multicategory_dedupe.py --run data/coruna/apple/multicategory/765844a02f75 --out data/coruna/apple/multicategory_dedupe/followup_20261012 --categories store_sign,graffiti,street_name_plate --limit 1500 --workers 2 --min-inlier-ratio .8 --min-coverage .35 --context-check
-ExecStartPost=/home/mateo/projects/typology-machine/.venv/bin/python explore/multicategory_dedupe_review.py --input data/coruna/apple/multicategory_dedupe/followup_20261012 --output data/coruna/comparison_share/multicategory-followup.html
+WorkingDirectory=%h/projects/typology-machine
+ExecStart=%h/projects/typology-machine/.venv/bin/python -u explore/multicategory_dedupe.py --run data/coruna/apple/multicategory/765844a02f75 --out data/coruna/apple/multicategory_dedupe/followup_20261012 --categories store_sign,graffiti,street_name_plate --limit 1500 --workers 2 --min-inlier-ratio .8 --min-coverage .35 --context-check
+ExecStartPost=%h/projects/typology-machine/.venv/bin/python explore/multicategory_dedupe_review.py --input data/coruna/apple/multicategory_dedupe/followup_20261012 --output data/coruna/comparison_share/multicategory-followup.html
 Environment=OPENBLAS_NUM_THREADS=1
 Environment=OMP_NUM_THREADS=1
 Nice=15

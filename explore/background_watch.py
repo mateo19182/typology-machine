@@ -12,6 +12,7 @@ from urllib.request import Request, urlopen
 ROOT = Path(__file__).resolve().parents[1]
 STATE = Path.home() / '.local/state/typology-machine'
 REPORT = STATE / 'background-status.json'
+DATA_DISK = os.environ.get('TYPOLOGY_DATA_DISK', '/mnt/data')
 
 
 def read_json(path):
@@ -63,9 +64,9 @@ def check():
     moving = migration.get('stage') not in (None, 'complete', 'failed')
     if migration.get('stage') == 'failed':
         alerts.append('Storage migration failed; inspect storage-migration.json before changing either copy')
-    if not os.path.ismount('/mnt/data'):
-        alerts.append('/mnt/data is not mounted')
-    for path, minimum in (('/', 15), ('/mnt/data', 30)):
+    if not os.path.ismount(DATA_DISK):
+        alerts.append(f'{DATA_DISK} is not mounted')
+    for path, minimum in (('/', 15), (DATA_DISK, 30)):
         free = round(shutil.disk_usage(path).free / 1024**3, 1)
         report.setdefault('free_gib', {})[path] = free
         if free < minimum:
@@ -98,7 +99,10 @@ def check():
         progress('ocr', ocr.stat().st_size if ocr.exists() else 0,
                  services['typology-ocr.service']['ActiveState'] in ('active', 'activating'))
     report['crop_delivery'] = read_json(ROOT / 'data/coruna/site/crop-storage.json')
-    for url in ('http://127.0.0.1:8790/api/meta', 'https://typology.m19182.dev/api/meta'):
+    urls = ['http://127.0.0.1:8790/api/meta']
+    if public := os.environ.get('TYPOLOGY_PUBLIC_URL'):
+        urls.append(public.rstrip('/') + '/api/meta')
+    for url in dict.fromkeys(urls):
         try:
             with urlopen(Request(url, headers={'User-Agent': 'typology-background-watch/1.0'}), timeout=15) as response:
                 metadata = json.load(response)

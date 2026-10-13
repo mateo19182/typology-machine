@@ -8,6 +8,7 @@ import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import math
+import os
 from pathlib import Path
 import re
 import sqlite3
@@ -393,8 +394,8 @@ def csv_cell(value):
 
 
 class API:
-    def __init__(self, state=STATE, site=SITE, origin='https://typology.m19182.dev'):
-        self.state, self.site, self.origin = state, site, origin
+    def __init__(self, state=STATE, site=SITE, origin=None):
+        self.state, self.site, self.origin = state, site, origin or os.environ.get('TYPOLOGY_PUBLIC_URL', 'http://127.0.0.1:8790')
         self.capacity = threading.BoundedSemaphore(4)
 
     def metadata(self):
@@ -526,11 +527,12 @@ def main():
     parser.add_argument('--state', type=Path, default=STATE)
     parser.add_argument('--host', default='127.0.0.1')
     parser.add_argument('--port', type=int, default=8794)
+    parser.add_argument('--origin', default=os.environ.get('TYPOLOGY_PUBLIC_URL', 'http://127.0.0.1:8790'), help='Public viewer URL used in exports')
     args = parser.parse_args()
     if args.command == 'build':
         build(args.site, args.state)
     else:
-        ThreadingHTTPServer((args.host, args.port), API(args.state, args.site).handler()).serve_forever()
+        ThreadingHTTPServer((args.host, args.port), API(args.state, args.site, args.origin).handler()).serve_forever()
 
 
 if __name__ == '__main__':

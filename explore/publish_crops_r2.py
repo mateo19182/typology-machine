@@ -19,9 +19,6 @@ from urllib.parse import urlsplit
 ROOT = Path(__file__).resolve().parents[1]
 SITE = ROOT / 'data/coruna/site'
 STATE = Path.home() / '.local/state/typology-machine/r2'
-ACCOUNT = '41a790591e8c48d0a4167fa3d1b5b954'
-BUCKET = 'typology-crops'
-PUBLIC = 'https://crops.typology.m19182.dev'
 PREFIX = 'crops/v1'
 
 
@@ -94,14 +91,21 @@ def main():
     parser.add_argument('--site', type=Path, default=SITE)
     parser.add_argument('--state', type=Path, default=STATE)
     parser.add_argument('--env-file', type=Path, default=Path.home() / '.config/typology-machine/r2.env')
-    parser.add_argument('--account', default=ACCOUNT)
-    parser.add_argument('--bucket', default=BUCKET)
-    parser.add_argument('--public-url', default=PUBLIC)
+    parser.add_argument('--account')
+    parser.add_argument('--bucket')
+    parser.add_argument('--public-url')
     parser.add_argument('--workers', type=int, default=8)
     parser.add_argument('--limit', type=int, help='Upload a bounded sample, without activating remote delivery')
     parser.add_argument('--inventory-only', action='store_true')
     parser.add_argument('--activate', action='store_true', help='Enable remote delivery only after a complete upload and public checks')
     args = parser.parse_args()
+    from dotenv import load_dotenv
+    load_dotenv(args.env_file, override=True)
+    args.account = args.account or os.environ.get('R2_ACCOUNT_ID')
+    args.bucket = args.bucket or os.environ.get('R2_BUCKET', 'typology-crops')
+    args.public_url = args.public_url or os.environ.get('R2_PUBLIC_URL')
+    if not args.inventory_only and (not args.account or not args.public_url):
+        parser.error('Set R2_ACCOUNT_ID and R2_PUBLIC_URL in --env-file, or pass --account and --public-url')
     if args.workers < 1 or (args.limit is not None and args.limit < 1):
         parser.error('Workers and limit must be positive')
     if args.activate and (args.limit or args.inventory_only):
@@ -111,9 +115,10 @@ def main():
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         identity = {'account': args.account, 'bucket': args.bucket, 'prefix': PREFIX}
         identity_path = args.state / 'destination.json'
-        if identity_path.exists() and json.loads(identity_path.read_text()) != identity:
+        if args.account and identity_path.exists() and json.loads(identity_path.read_text()) != identity:
             raise ValueError('Use a separate checkpoint directory for a different destination')
-        identity_path.write_text(json.dumps(identity))
+        if args.account:
+            identity_path.write_text(json.dumps(identity))
         with open_database(args.state / 'uploads.sqlite3') as db:
             manifest_bytes = (args.site / 'layers/manifest.json').read_bytes()
             legacy_bytes = (args.site / 'data.json').read_bytes()
@@ -141,11 +146,9 @@ def main():
             print(json.dumps(report), flush=True)
             if args.inventory_only:
                 return
-            from dotenv import load_dotenv
             import boto3
             from botocore.config import Config
             # Never fall back to credentials for an unrelated AWS account.
-            load_dotenv(args.env_file, override=True)
             if not all(os.environ.get(key) for key in ('AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY')):
                 raise RuntimeError('Save bucket-scoped R2 credentials in the configured env file')
             client = boto3.client('s3', endpoint_url=f'https://{args.account}.r2.cloudflarestorage.com',

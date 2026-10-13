@@ -1,11 +1,15 @@
 import base64
 import hashlib
+import io
+import json
+import os
+from contextlib import redirect_stdout
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
-from publish_crops_r2 import crop_path, upload
+from publish_crops_r2 import crop_path, upload, main
 
 
 class CropPublicationTests(unittest.TestCase):
@@ -44,6 +48,29 @@ class CropPublicationTests(unittest.TestCase):
             path.write_bytes(b'changed jpeg')
             self.assertTrue(upload(client, site, 'bucket', '/img/a.jpg', result[1:4])[-1])
             self.assertEqual(client.put_object.call_count, 2)
+
+    def test_offline_inventory_then_configured_destination_keeps_checkpoint_guard(self):
+        with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {}, clear=True), redirect_stdout(io.StringIO()):
+            root = Path(folder)
+            site, state, env = root / 'site', root / 'state', root / 'r2.env'
+            (site / 'layers').mkdir(parents=True)
+            (site / 'img').mkdir()
+            (site / 'img/a.jpg').write_bytes(b'jpeg')
+            (site / 'layers/manifest.json').write_text(' {"categories": []}')
+            (site / 'data.json').write_text('{"signs": [{"id": "a"}]}')
+            argv = ['upload', '--site', str(site), '--state', str(state), '--env-file', str(env), '--inventory-only']
+            with patch('sys.argv', argv):
+                main()
+            self.assertFalse((state / 'destination.json').exists())
+            env.write_text('R2_ACCOUNT_ID=test-account\nR2_BUCKET=test-crops\nR2_PUBLIC_URL=https://crops.example\n')
+            with patch('sys.argv', argv):
+                main()
+            self.assertEqual(json.loads((state / 'destination.json').read_text()),
+                             {'account': 'test-account', 'bucket': 'test-crops', 'prefix': 'crops/v1'})
+            self.assertEqual(json.loads((state / 'status.json').read_text())['crops'], 1)
+            with patch('sys.argv', argv + ['--account', 'different-account']):
+                with self.assertRaisesRegex(ValueError, 'different destination'):
+                    main()
 
     def test_failed_upload_does_not_return_success(self):
         with tempfile.TemporaryDirectory() as folder:

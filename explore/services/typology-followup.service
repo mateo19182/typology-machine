@@ -1,7 +1,8 @@
 [Unit]
 Description=Check Typology runs and perform verified handoffs
 [Service]
+EnvironmentFile=-%h/.config/typology-machine/deployment.env
 Type=oneshot
-WorkingDirectory=/home/mateo/projects/typology-machine
-ExecStart=/home/mateo/projects/typology-machine/.venv/bin/python -u explore/pipeline_followup.py --apply
+WorkingDirectory=%h/projects/typology-machine
+ExecStart=%h/projects/typology-machine/.venv/bin/python -u explore/pipeline_followup.py --apply
 TimeoutStartSec=900

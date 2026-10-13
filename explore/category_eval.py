@@ -1,7 +1,7 @@
 """Small category review set and Tailscale review server.
 
 uv run explore/category_eval.py prepare
-uv run explore/category_eval.py serve --host 100.83.166.6 --port 8792
+uv run explore/category_eval.py serve --host 127.0.0.1 --port 8792
 """
 import argparse
 import hashlib
