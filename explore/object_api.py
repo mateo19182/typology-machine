@@ -383,24 +383,39 @@ def cells(db, f, box, cols, rows, meta, cluster_colors=False):
     bottom, top = mercator(s), mercator(n)
     dx, dy = (e-w)/cols, (top-bottom)/rows
     shade = "CASE WHEN legacy THEN coalesce(color,'#777') ELSE '' END" if cluster_colors else "''"
+    # With max(quality), SQLite takes bare columns from the best row: the cell's
+    # identity (exact when it holds one object) and the observation shown as a preview.
     sql = f'''SELECT min(?,max(0,cast((lon-?)/? AS INTEGER))) cx,
       min(?,max(0,cast((my-?)/? AS INTEGER))) cy,
       category,{shade} shade,
-      count(*) amount,avg(lon) lon,avg(my) my,min(oid) identity
+      count(*) amount,avg(lon) lon,avg(my) my,max(quality) best,oid identity,id sample
       FROM ({query}) GROUP BY cx,cy,category,shade'''
     found = db.execute(sql, [cols-1, w, dx, rows-1, bottom, dy, *args]).fetchall()
     colors = {c['id']: c['color'] for c in meta['categories']}
     groups = {}
     for r in found:
         key = (r['cx'], r['cy'])
-        group = groups.setdefault(key, {'lo': 0, 'my': 0, 'count': 0, 'colors': [], 'id': r['identity'],
+        group = groups.setdefault(key, {'cx': r['cx'], 'cy': r['cy'], 'lo': 0, 'my': 0, 'count': 0, 'colors': [], 'id': r['identity'],
+            'sample': r['sample'], 'best': r['best'],
             'bounds': [w+r['cx']*dx, latitude(bottom+r['cy']*dy), w+(r['cx']+1)*dx, latitude(bottom+(r['cy']+1)*dy)]})
         group['lo'] += r['lon']*r['amount']; group['my'] += r['my']*r['amount']; group['count'] += r['amount']
+        if (r['best'] or 0) > (group['best'] or 0):
+            group['sample'], group['best'] = r['sample'], r['best']
         shade = r['shade'] or colors[r['category']]
         if shade not in group['colors']:
             group['colors'].append(shade)
+    crops = {}
+    samples = [g['sample'] for g in groups.values()]
+    for i in range(0, len(samples), 500):
+        chunk = samples[i:i+500]
+        crops.update(db.execute(f"SELECT id,json_extract(payload,'$.crop') FROM records WHERE id IN ({','.join('?'*len(chunk))})", chunk))
     for group in groups.values():
         group['lo'] /= group['count']; group['la'] = latitude(group.pop('my')/group['count'])
+        group.pop('best')
+        if crops.get(group['sample']):
+            group['crop'] = crops[group['sample']]
+        else:
+            group.pop('sample')
         if group['count'] != 1:
             group.pop('id')
     return list(groups.values())
@@ -477,6 +492,20 @@ class API:
         result['snapshot'] = meta['query_snapshot']
         return result
 
+    def cells(self, db, meta, params):
+        # The viewer aligns bbox to a world pixel grid and pads it beyond the
+        # viewport, so panning reuses cells instead of rebinning every dot.
+        box = bounds(params.get('bbox'))
+        if not box:
+            raise ValueError('Cells need bounds')
+        cols, rows = (min(400, max(1, int(params.get(k, 64)))) for k in ('cols', 'rows'))
+        found = cells(db, filters(params, meta), box, cols, rows, meta, params.get('colors') == '1')
+        # Rows are [cx, cy, count, lon, lat, colors, id|null, sample|null, crop|null]; the
+        # viewer derives cell bounds from the grid it requested.
+        return {'cells': [[c['cx'], c['cy'], c['count'], round(c['lo'], 6), round(c['la'], 6), c['colors'],
+                           c.get('id'), c.get('sample'), c.get('crop')] for c in found],
+                'snapshot': meta['query_snapshot']}
+
     def handler(self):
         api = self
         class Handler(BaseHTTPRequestHandler):
@@ -493,6 +522,8 @@ class API:
                         meta = json.loads(db.execute('SELECT json FROM metadata').fetchone()[0])
                         if route.path == '/api/query':
                             self.json(api.query(path, db, meta, params))
+                        elif route.path == '/api/cells':
+                            self.json(api.cells(db, meta, params))
                         elif route.path == '/api/object':
                             self.json(object_detail(db, filters(params, meta), params.get('id', '')))
                         elif route.path == '/api/export':

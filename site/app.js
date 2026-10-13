@@ -21,7 +21,7 @@
     'Municipal barrio boundaries unavailable.':'No se pueden cargar los límites de los barrios.',
     'Outside mapped barrios':'Fuera de los barrios delimitados','Streets':'Calles','Satellite':'Satélite',
     'rows':'filas','Preparing download…':'Preparando descarga…','Download ready':'Descarga preparada',
-    'Bounds: Concello da Coruña':'Límites: Concello da Coruña','Clear selection':'Quitar selección',
+    'Bounds: Concello da Coruña':'Límites: Concello da Coruña','Image previews on map':'Vistas previas en el mapa','Preview':'Vista previa','Clear selection':'Quitar selección',
     'Record details':'Detalles del registro','records, with matching viewpoints':'registros, con sus vistas coincidentes',
     'Reload the page to retry.':'Recarga la página para reintentar.',
     'Some selected layers failed to load. Retry before downloading.':'Algunas capas no se cargaron. Reinténtalo antes de descargar.'
@@ -42,7 +42,7 @@
   let map, order=[], browse=[], curSign, curObject, full=false;
   let manifest=null, availableManifest=null, selectedId='', restoring=true, ready=false, refreshing=false;
   let panelItems=[], pointSelection=null, barrioLayer=null;
-  let serverCells=[], result=null, hasMore=false, pageBusy=false, queryBusy=false, queryError=false, shuffleSeed=0;
+  let cellData=null, pendingCells=null, cellController, cellGeneration=0, result=null, hasMore=false, pageBusy=false, queryBusy=false, queryError=false, shuffleSeed=0;
   let queryController, queryGeneration=0, detailGeneration=0, viewport;
   let barrios=[];
   let cropStorage=CropStorage.create();
@@ -83,7 +83,7 @@
     const params=new URLSearchParams({snapshot:manifest.query_snapshot,layers:f.categories.join(','),q:f.query,
       confidence:f.confidence,barrio:f.barrio,source:f.source,from:f.from,to:f.to,unknown:f.unknown?'1':'0',group:f.grouped?'1':'0',
       area:f.area?'1':'0',cluster:f.cluster,colors:$('cluster-colors').checked?'1':'0',
-      view:document.body.dataset.view,map:document.body.dataset.view==='map'?'1':'0',cols:view.cols,rows:view.rows,limit:48,seed:shuffleSeed});
+      view:document.body.dataset.view,map:'0',limit:48,seed:shuffleSeed});
     params.set('bbox',view.bbox);
     if(pointSelection)params.set('list_bbox',pointSelection.bounds.join(','));
     return params;
@@ -108,18 +108,76 @@
       if(count){count.textContent=(enabled.has(c.id)?result?.counts[c.id]||0:c.count||0).toLocaleString();count.title=t(enabled.has(c.id)?'Selected objects':'Total in snapshot; enable layer to filter by capture date');}
     }
   }
+  // Map cells sit on a world pixel grid and cover more than the viewport: panning redraws
+  // cached cells at once, and only leaving the loaded area asks the server again.
+  function cellGrid(pad){
+    const z=map.getZoom(),size=z<17?18:10,view=map.getPixelBounds(),world=map.getPixelWorldBounds(z);
+    const range=(lo,hi,min,max)=>{const a=Math.floor(lo/size),b=Math.ceil(hi/size),extra=Math.max(0,Math.min(Math.ceil((b-a)*pad),Math.floor((800-(b-a))/2)));return [Math.max(Math.ceil(min/size),a-extra),Math.min(Math.floor(max/size),b+extra)];};
+    const [gx0,gx1]=range(view.min.x,view.max.x,world.min.x,world.max.x),[gy0,gy1]=range(view.min.y,view.max.y,map.project([85,0],z).y,map.project([-85,0],z).y);
+    return {z,size,gx0,gx1,gy0,gy1};
+  }
+  const covers=(a,b)=>a.z===b.z&&a.size===b.size&&a.gx0<=b.gx0&&a.gx1>=b.gx1&&a.gy0<=b.gy0&&a.gy1>=b.gy1;
+  function cellParams(snapshot){const params=queryParams();for(const key of ['bbox','cols','rows','view','map','limit','seed','list_bbox','area'])params.delete(key);params.set('snapshot',snapshot.query_snapshot);return params;}
+  async function refreshCells(snapshot=manifest){
+    if(!map||!snapshot||document.body.dataset.view!=='map')return;
+    const key=cellParams(snapshot).toString(),view=cellGrid(0);
+    if(view.gx1<=view.gx0||view.gy1<=view.gy0)return;
+    for(const loaded of [cellData,pendingCells])if(loaded?.key===key&&covers(loaded,view))return;
+    const grid={...cellGrid(.5),key},generation=++cellGeneration,edge=(x,y)=>map.unproject([x*grid.size,y*grid.size],grid.z);
+    cellController?.abort();cellController=new AbortController();pendingCells=grid;
+    const nw=edge(grid.gx0,grid.gy0),se=edge(grid.gx1,grid.gy1),params=cellParams(snapshot);
+    params.set('bbox',[Math.max(-180,nw.lng),Math.max(-85,se.lat),Math.min(180,se.lng),Math.min(85,nw.lat)].join(','));
+    params.set('cols',grid.gx1-grid.gx0);params.set('rows',grid.gy1-grid.gy0);
+    try{
+      const data=await fetchJSON('/api/cells?'+params,{signal:cellController.signal});
+      if(generation!==cellGeneration)return;
+      // The server counts rows from the south edge; the screen grid counts from the north.
+      grid.cells=data.cells.map(([cx,cy,count,lo,la,colors,id,sample,crop])=>{
+        const gx=grid.gx0+cx,gy=grid.gy1-1-cy,a=edge(gx,gy),b=edge(gx+1,gy+1);
+        return {count,lo,la,colors,id,sample,crop,bounds:[a.lng,b.lat,b.lng,a.lat]};
+      });
+      cellData=grid;observations.draw();
+    }catch(error){if(generation===cellGeneration&&error.name!=='AbortError'){$('map-status').hidden=false;$('map-status').textContent=t('Could not load');}}
+    finally{if(generation===cellGeneration)pendingCells=null;}
+  }
+  let merged=null;
+  function displayCells(){
+    if(!cellData)return [];
+    const z=map.getZoom();if(z>=cellData.z)return cellData.cells;
+    if(merged?.data===cellData&&merged.z===z)return merged.cells;
+    // Zooming out merges cached cells immediately; the exact grid replaces them when it arrives.
+    const size=z<17?18:10,groups=new Map();
+    for(const c of cellData.cells){
+      const p=map.project([c.la,c.lo],z),key=Math.floor(p.x/size)+','+Math.floor(p.y/size),g=groups.get(key);
+      if(!g){groups.set(key,{...c,colors:[...c.colors],lo:c.lo*c.count,la:c.la*c.count,top:c.count});continue;}
+      g.lo+=c.lo*c.count;g.la+=c.la*c.count;g.count+=c.count;g.id=null;
+      for(const color of c.colors)if(!g.colors.includes(color))g.colors.push(color);
+      g.bounds=[Math.min(g.bounds[0],c.bounds[0]),Math.min(g.bounds[1],c.bounds[1]),Math.max(g.bounds[2],c.bounds[2]),Math.max(g.bounds[3],c.bounds[3])];
+      if(c.crop&&(c.count>g.top||!g.crop)){g.sample=c.sample;g.crop=c.crop;g.top=c.count;}
+    }
+    for(const g of groups.values()){g.lo/=g.count;g.la/=g.count;}
+    merged={data:cellData,z,cells:[...groups.values()]};return merged.cells;
+  }
+  function updateVisible(){
+    if(!map)return;
+    let visible=0;const bounds=map.getBounds();
+    for(const cell of cellData?.cells||[])if(bounds.contains([cell.la,cell.lo]))visible+=cell.count;
+    if(document.body.dataset.view==='map'){$('map-status').hidden=false;$('map-status').textContent=`${visible.toLocaleString()} ${grouped()?t('items'):t('observations')} ${t('in view · click a dot to inspect')}`;}
+    $('results-title').textContent=`${t(pointSelection?'At this point':'In this area')} · ${(pointSelection?.count??visible).toLocaleString()}`;
+  }
   async function refreshVisible(snapshot=manifest){
     if(!map||!manifest)return false;
     const generation=++queryGeneration;
+    refreshCells(snapshot);
     queryController?.abort();queryController=new AbortController();queryBusy=true;pageBusy=false;updateCounts();
     try{
       const params=queryParams();params.set('snapshot',snapshot.query_snapshot);
       const next=await fetchJSON('/api/query?'+params,{signal:queryController.signal});
       if(generation!==queryGeneration)return false;
-      manifest=snapshot;result=next;serverCells=next.cells||[];hasMore=next.has_more;queryError=false;
+      manifest=snapshot;result=next;hasMore=next.has_more;queryError=false;
       order=document.body.dataset.view==='wall'?next.items:[];
       panelItems=document.body.dataset.view==='map'?next.items:[];
-      $('layer-error').textContent='';renderWall();renderPanel();observations.draw();return true;
+      $('layer-error').textContent='';renderWall();renderPanel();return true;
     }catch(error){
       if(generation!==queryGeneration||error.name==='AbortError')return false;
       queryError=true;$('layer-error').textContent=t('Could not load')+'. '+t('Select it to retry.');return false;
@@ -171,7 +229,7 @@
   function renderPanel(){
     if(document.body.dataset.view!=='map')return;
     $('map-thumbnails').replaceChildren();
-    $('results-title').textContent=`${t(pointSelection?'At this point':'In this area')} · ${(pointSelection?.count??result?.visible??0).toLocaleString()}`;
+    updateVisible();
     $('results-clear').hidden=!pointSelection;$('results-empty').textContent=panelItems.length?'':t('No objects in this area. Move the map or change filters.');
     if(!$('map-results').classList.contains('collapsed'))for(const row of panelItems)$('map-thumbnails').append(tile(row,panelItems));
     $('results-more').hidden=!hasMore;$('results-more').disabled=pageBusy;
@@ -244,7 +302,7 @@
     if(shuffleSeed)params.set('seed',shuffleSeed);
     if(f.query)params.set('q',f.query);if(f.barrio)params.set('barrio',f.barrio);if(f.source)params.set('source',f.source);
     if(!f.unknown)params.set('unknown','0');if(f.area)params.set('area','1');if(f.cluster)params.set('cluster',f.cluster);
-    if($('cluster-colors').checked)params.set('colors','1');
+    if($('cluster-colors').checked)params.set('colors','1');if(!$('map-previews').checked)params.set('previews','0');
     if(selectedId){params.set('object',selectedId);if(curSign)params.set('observation',curSign.id);}
     return params;
   }
@@ -263,7 +321,7 @@
     $('object-search').value=p.get('q')||'';
     $('barrio-filter').value=p.get('barrio')||'';$('source-filter').value=p.get('source')||'';
     $('area-filter').checked=p.get('area')==='1';$('group-duplicates').checked=p.get('group')!=='0';
-    $('date-unknown').checked=p.get('unknown')!=='0';$('cluster-filter').value=p.get('cluster')||'';$('cluster-colors').checked=p.get('colors')==='1';
+    $('date-unknown').checked=p.get('unknown')!=='0';$('cluster-filter').value=p.get('cluster')||'';$('cluster-colors').checked=p.get('colors')==='1';$('map-previews').checked=p.get('previews')!=='0';
     const from=Number(p.get('from')),to=Number(p.get('to'));
     $('year-from').value=from>=1900?from:$('year-from').min;$('year-to').value=to>=1900?to:$('year-to').max;
     if(Number($('year-from').value)>Number($('year-to').value))$('year-to').value=$('year-from').value;yearLabels();
@@ -299,32 +357,97 @@
   const streets=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:20,maxNativeZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'});
   L.control.layers({[t('Satellite')]:satellite,[t('Streets')]:streets},null,{position:'topleft'}).addTo(map);
   L.control.scale({imperial:false,position:'bottomright'}).addTo(map);
-  const ObservationCanvas=L.Layer.extend({
-    onAdd(m){this.canvas=L.DomUtil.create('canvas','observation-canvas');m.getPane('overlayPane').append(this.canvas);this.groups=[];m.on('moveend zoomend resize',this.draw,this);m.on('click',this.click,this);this.draw();},
-    onRemove(m){m.off('moveend zoomend resize',this.draw,this);m.off('click',this.click,this);this.canvas.remove();},
+  const ObservationLayer=L.Layer.extend({
+    onAdd(m){
+      this.root=L.DomUtil.create('div','observation-layer leaflet-zoom-animated',m.getPane('overlayPane'));
+      this.canvas=L.DomUtil.create('canvas','observation-canvas',this.root);
+      this.focus=L.DomUtil.create('div','map-focus',this.root);this.focus.hidden=true;
+      this.focus.innerHTML='<span class="pulse"></span><span class="card"><img alt=""></span>';this.focusImg=this.focus.querySelector('img');
+      this.previews=new Map();this.groups=[];this.frame=0;
+      m.on('moveend zoomend resize viewreset',this.draw,this);m.on('move',this.schedule,this);m.on('zoomanim',this.animate,this);m.on('click',this.click,this);
+      this.draw();
+    },
+    onRemove(m){m.off('moveend zoomend resize viewreset',this.draw,this);m.off('move',this.schedule,this);m.off('zoomanim',this.animate,this);m.off('click',this.click,this);cancelAnimationFrame(this.frame);this.root.remove();},
+    // Dragging redraws cached cells every frame, so dots never wait for the server to follow the map.
+    schedule(){if(!this.frame)this.frame=requestAnimationFrame(()=>{this.frame=0;if(map._animatingZoom)return;this.draw();if(Number.isInteger(map.getZoom()))refreshCells();});},
+    // Same transform as Leaflet's own renderers: the drawing scales with the zoom animation.
+    animate(e){const scale=map.getZoomScale(e.zoom,this.zoom),offset=map.project(this.center,e.zoom).subtract(map.getSize().multiplyBy(scale/2)).subtract(map._getNewPixelOrigin(e.center,e.zoom));L.DomUtil.setTransform(this.root,offset,scale);},
     draw(){
-      const size=map.getSize(),dpr=window.devicePixelRatio||1,c=this.canvas;c.width=size.x*dpr;c.height=size.y*dpr;c.style.width=size.x+'px';c.style.height=size.y+'px';L.DomUtil.setPosition(c,map.containerPointToLayerPoint([0,0]));
-      const ctx=c.getContext('2d');ctx.scale(dpr,dpr);
-      this.groups=serverCells.map(cell=>{const p=map.latLngToContainerPoint([cell.la,cell.lo]);return {...cell,x:p.x,y:p.y};});
-      for(const group of this.groups){
-        const {colors}=group,r=group.count>1?Math.min(12,5+Math.log2(group.count)):4;group.r=r;
-        colors.forEach((col,i)=>{ctx.beginPath();ctx.moveTo(group.x,group.y);ctx.arc(group.x,group.y,r,i/colors.length*Math.PI*2,(i+1)/colors.length*Math.PI*2);ctx.closePath();ctx.fillStyle=col;ctx.fill();});
-        ctx.strokeStyle=group.id===selectedId?'#fff':'#141519';ctx.lineWidth=group.id===selectedId?3:1;ctx.beginPath();ctx.arc(group.x,group.y,r,0,Math.PI*2);ctx.stroke();
-        if(group.count>1){ctx.fillStyle='#fff';ctx.font='bold 10px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(group.count>99?'99+':String(group.count),group.x,group.y);}
+      if(!this.root)return;
+      const size=map.getSize(),dpr=window.devicePixelRatio||1,c=this.canvas;
+      this.center=map.getCenter();this.zoom=map.getZoom();L.DomUtil.setPosition(this.root,map.containerPointToLayerPoint([0,0]));
+      if(c.width!==Math.round(size.x*dpr)||c.height!==Math.round(size.y*dpr)){c.width=Math.round(size.x*dpr);c.height=Math.round(size.y*dpr);c.style.width=size.x+'px';c.style.height=size.y+'px';}
+      const ctx=c.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,size.x,size.y);
+      const focus=document.body.dataset.view==='map'&&Number.isFinite(curSign?.la)&&Number.isFinite(curSign?.lo)?curSign:null;
+      this.groups=[];
+      for(const cell of displayCells()){
+        const p=map.latLngToContainerPoint([cell.la,cell.lo]);
+        if(p.x>-20&&p.y>-20&&p.x<size.x+20&&p.y<size.y+20)this.groups.push({cell,x:p.x,y:p.y,r:cell.count>1?Math.min(12,5+Math.log2(cell.count)):4});
       }
-      $('map-status').hidden=false;$('map-status').textContent=`${(result?.visible||0).toLocaleString()} ${grouped()?t('items'):t('observations')} ${t('in view · click a dot to inspect')}`;
+      ctx.font='bold 10px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+      for(const {cell,x,y,r} of this.groups){
+        const selected=cell.id&&cell.id===selectedId;ctx.globalAlpha=focus&&!selected?.3:1;
+        cell.colors.forEach((col,i)=>{ctx.beginPath();ctx.moveTo(x,y);ctx.arc(x,y,r,i/cell.colors.length*Math.PI*2,(i+1)/cell.colors.length*Math.PI*2);ctx.closePath();ctx.fillStyle=col;ctx.fill();});
+        ctx.strokeStyle=selected?'#fff':'#141519';ctx.lineWidth=selected?3:1;ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.stroke();
+        if(cell.count>1){ctx.fillStyle='#fff';ctx.fillText(cell.count>99?'99+':String(cell.count),x,y);}
+      }
+      ctx.globalAlpha=1;
+      if(focus){
+        // Other viewpoints of the same object are hollow rings; the open one gets the halo.
+        ctx.strokeStyle='#d79a3a';ctx.lineWidth=2;
+        for(const view of curObject?.views||[])if(view!==focus&&Number.isFinite(view.la)){const p=map.latLngToContainerPoint([view.la,view.lo]);ctx.beginPath();ctx.arc(p.x,p.y,6,0,Math.PI*2);ctx.stroke();}
+        const p=map.latLngToContainerPoint([focus.la,focus.lo]);
+        ctx.fillStyle='rgba(10,11,13,.55)';ctx.beginPath();ctx.arc(p.x,p.y,18,0,Math.PI*2);ctx.fill();
+        ctx.fillStyle='#d79a3a';ctx.beginPath();ctx.arc(p.x,p.y,9,0,Math.PI*2);ctx.fill();
+        ctx.strokeStyle='#fff';ctx.lineWidth=3;ctx.stroke();ctx.strokeStyle='#000';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(p.x,p.y,11,0,Math.PI*2);ctx.stroke();
+      }
+      this.place(size,focus);updateVisible();
+    },
+    place(size,focus){
+      const chosen=[],at=focus&&map.latLngToContainerPoint([focus.la,focus.lo]);
+      if($('map-previews').checked&&document.body.dataset.view==='map'){
+        // Biggest clusters first; each preview keeps clear of the others and of the selection card.
+        const candidates=this.groups.filter(g=>g.cell.crop&&g.y>64&&g.x>24&&g.x<size.x-24).sort((a,b)=>b.cell.count-a.cell.count||(a.cell.sample<b.cell.sample?-1:1));
+        const limit=size.x<600?12:36;
+        for(const g of candidates){
+          if(chosen.length>=limit)break;
+          if(at&&Math.abs(at.x-g.x)<90&&g.y-at.y>-80&&g.y-at.y<130)continue;
+          if(chosen.every(o=>Math.abs(o.x-g.x)>=56||Math.abs(o.y-g.y)>=62))chosen.push(g);
+        }
+      }
+      const keep=new Set();
+      for(const g of chosen){
+        const key=g.cell.sample;keep.add(key);let el=this.previews.get(key);
+        if(!el){
+          el=L.DomUtil.create('button','map-preview',this.root);el.type='button';const img=document.createElement('img');img.alt='';cropStorage.image(img,g.cell.crop);el.append(img);
+          L.DomEvent.on(el,'click',event=>{L.DomEvent.stop(event);if(map.dragging?.moved())return;browse=panelItems;open({id:el.cell.sample},el.cell.sample);});
+          L.DomEvent.on(el,'dblclick',L.DomEvent.stop);
+          this.previews.set(key,el);
+        }
+        el.cell=g.cell;el.style.left=g.x+'px';el.style.top=(g.y-g.r-7)+'px';el.style.setProperty('--edge',g.cell.colors[0]);
+        el.setAttribute('aria-label',`${t('Preview')} · ${g.cell.count.toLocaleString()} ${grouped()?t('items'):t('observations')}`);
+      }
+      for(const [key,el] of this.previews)if(!keep.has(key)){el.remove();this.previews.delete(key);}
+      this.root.classList.toggle('has-focus',!!focus);this.focus.hidden=!focus;
+      if(focus){
+        this.focus.style.left=at.x+'px';this.focus.style.top=at.y+'px';
+        if(this.focus.dataset.crop!==(focus.crop||'')){this.focus.dataset.crop=focus.crop||'';this.focusImg.hidden=!focus.crop;if(focus.crop){this.focusImg.onload=()=>this.draw();cropStorage.image(this.focusImg,focus.crop);}}
+        // Keep the card inside the map; the stem still points at the observation.
+        const card=this.focus.lastElementChild,w=card.offsetWidth,h=card.offsetHeight,left=at.x-w/2;
+        card.style.setProperty('--shift',Math.max(8-left,Math.min(0,size.x-8-left-w))+'px');this.focus.classList.toggle('below',at.y<h+40);
+      }
     },
     click(event){
       const p=event.containerPoint;let best=null,distance=Infinity;
-      for(const group of this.groups){const d=Math.hypot(group.x-p.x,group.y-p.y);if(d<group.r+7&&d<distance){best=group;distance=d;}}
-      if(!best)return;
-      if(best.count===1){browse=panelItems;open({id:best.id});return;}
-      close();pointSelection=best;$('map-results').classList.remove('collapsed');$('results-toggle').textContent=t('Hide');$('results-toggle').setAttribute('aria-expanded','true');refreshVisible().then(()=>$('map-thumbnails').querySelector('button')?.focus());
+      for(const g of this.groups){const d=Math.hypot(g.x-p.x,g.y-p.y);if(d<g.r+7&&d<distance){best=g;distance=d;}}
+      if(!best)return;const cell=best.cell;
+      if(cell.count===1&&cell.id){browse=panelItems;open({id:cell.id});return;}
+      close();pointSelection={bounds:cell.bounds,count:cell.count};$('map-results').classList.remove('collapsed');$('results-toggle').textContent=t('Hide');$('results-toggle').setAttribute('aria-expanded','true');refreshVisible().then(()=>$('map-thumbnails').querySelector('button')?.focus());
     }
   });
-  const observations=new ObservationCanvas().addTo(map);
+  const observations=new ObservationLayer().addTo(map);
   let mapTimer;
-  map.on('moveend',()=>{if(restoring||document.body.dataset.view!=='map')return;pointSelection=null;clearTimeout(mapTimer);mapTimer=setTimeout(()=>{refreshVisible();saveState(true);},200);});
+  map.on('moveend',()=>{if(restoring||document.body.dataset.view!=='map')return;pointSelection=null;refreshCells();clearTimeout(mapTimer);mapTimer=setTimeout(()=>{refreshVisible();saveState(true);},200);});
   new ResizeObserver(()=>{if(document.body.dataset.view==='map')map.invalidateSize();}).observe($('map'));
   new IntersectionObserver(entries=>{if(entries[0].isIntersecting&&hasMore&&document.body.dataset.view==='wall')loadMore();},{rootMargin:'600px'}).observe($('more'));
   $('results-more').onclick=loadMore;
@@ -351,6 +474,7 @@
   for(const id of ['confidence-filter','source-filter','area-filter','group-duplicates','date-unknown','cluster-filter'])$(id).onchange=changeFilters;
   $('barrio-filter').onchange=()=>{drawBarrio(true);changeFilters();};
   $('cluster-colors').onchange=()=>{refreshVisible();saveState();};
+  $('map-previews').onchange=()=>{observations.draw();saveState();};
   let yearTimer;
   for(const id of ['year-from','year-to'])$(id).onchange=()=>{if(!$(id).value||!$(id).checkValidity()){$(id).value=id==='year-from'?$(id).min:$(id).max;}if(Number($('year-from').value)>Number($('year-to').value))$(id==='year-from'?'year-to':'year-from').value=$(id).value;yearLabels();clearTimeout(yearTimer);yearTimer=setTimeout(changeFilters,180);};
   let searchTimer;$('object-search').oninput=()=>{clearTimeout(searchTimer);searchTimer=setTimeout(changeFilters,200);};
@@ -358,7 +482,7 @@
   $('reset-filters').onclick=()=>{
     enabled.clear();for(const id of ['graffiti','street_name_plate'])if(categories.has(id))enabled.add(id);
     document.querySelectorAll('[data-category]').forEach(input=>input.checked=enabled.has(input.dataset.category));
-    $('group-duplicates').checked=true;$('cluster-colors').checked=false;shuffleSeed=0;
+    $('group-duplicates').checked=true;$('cluster-colors').checked=false;$('map-previews').checked=true;shuffleSeed=0;
     $('confidence-filter').value='0.65';$('object-search').value='';$('barrio-filter').value='';$('source-filter').value='';$('area-filter').checked=false;$('date-unknown').checked=true;
     $('year-from').value=$('year-from').min;$('year-to').value=$('year-to').max;$('cluster-filter').value='';yearLabels();drawBarrio();changeFilters();
   };

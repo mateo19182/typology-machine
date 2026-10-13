@@ -109,6 +109,18 @@ class ObjectAPITest(unittest.TestCase):
         self.assertEqual(self.request(group=0)['total'], 69)
         self.assertEqual(self.request(layers='')['total'], 0)
 
+    def test_cells_are_compact_grid_rows_with_previews(self):
+        found = self.request('cells', bbox='0,0,4,2', cols=4, rows=1, group=0)['cells']
+        self.assertEqual(sum(c[2] for c in found), 69)
+        single = next(c for c in found if c[0] == 3)
+        self.assertEqual(single[:3], [3, 0, 1])
+        self.assertEqual(single[5:], [['#abc'], 'b', 'b', '/proposal-assets/b.jpg'])
+        crowd = next(c for c in found if c[0] == 1)
+        self.assertIsNone(crowd[6])
+        self.assertTrue(crowd[8].startswith('/proposal-assets/'))
+        with self.assertRaises(HTTPError):
+            self.request('cells', cols=4, rows=1)
+
     def test_group_filters_choose_retained_viewpoint(self):
         obj = self.request('object', id='group-ab')
         self.assertEqual(obj['id'], 'a')
