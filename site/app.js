@@ -21,7 +21,7 @@
     'Municipal barrio boundaries unavailable.':'No se pueden cargar los límites de los barrios.',
     'Outside mapped barrios':'Fuera de los barrios delimitados','Streets':'Calles','Satellite':'Satélite',
     'rows':'filas','Preparing download…':'Preparando descarga…','Download ready':'Descarga preparada',
-    'Bounds: Concello da Coruña':'Límites: Concello da Coruña','Image previews on map':'Vistas previas en el mapa','Preview':'Vista previa','Clear selection':'Quitar selección',
+    'Bounds: Concello da Coruña':'Límites: Concello da Coruña','Image previews on map':'Vistas previas en el mapa','Loading map…':'Cargando mapa…','Preview':'Vista previa','Clear selection':'Quitar selección',
     'Record details':'Detalles del registro','records, with matching viewpoints':'registros, con sus vistas coincidentes',
     'Reload the page to retry.':'Recarga la página para reintentar.',
     'Some selected layers failed to load. Retry before downloading.':'Algunas capas no se cargaron. Reinténtalo antes de descargar.'
@@ -36,7 +36,7 @@
     while(node=walker.nextNode()){const raw=node.nodeValue,trimmed=raw.trim();if(translations[trimmed])node.nodeValue=raw.replace(trimmed,t(trimmed));}
   }
   for(const element of document.querySelectorAll('[aria-label],[placeholder]'))for(const attr of ['aria-label','placeholder'])if(element.hasAttribute(attr))element.setAttribute(attr,t(element.getAttribute(attr)));
-  $('d-map').textContent=t('map');
+  $('d-map').textContent=t('map');$('map-loading-text').textContent=t('Loading map…');
   $('language').textContent=language==='es'?'EN':'ES';$('language').onclick=()=>{try{localStorage.setItem('typology-language',language==='es'?'en':'es');}catch(error){}location.reload();};
   if (matchMedia('(max-width:600px)').matches) $('object-layers').open=false;
   let map, order=[], browse=[], curSign, curObject, full=false;
@@ -56,6 +56,12 @@
   const detail=$('detail');
   let returnFocus=null, statusTimer;
   function notice(message){$('action-status').textContent=message;clearTimeout(statusTimer);statusTimer=setTimeout(()=>$('action-status').textContent='',5000);}
+  // Small cached JPEGs from the API; the original crop is the fallback.
+  function thumbImage(img,path,size){
+    img.onload=()=>img.classList.add('loaded');
+    if(typeof path!=='string'||!/^\/(img|proposal-assets)\/[A-Za-z0-9_./-]+\.jpg$/.test(path)||path.split('/').includes('..')){cropStorage.image(img,path);return;}
+    img.onerror=()=>cropStorage.image(img,path);img.src=`/api/thumb/${size}${path}`;
+  }
   async function fetchJSON(url,options){const response=await fetch(url,options);if(!response.ok)throw Error(`${url}: ${response.status}`);return response.json();}
 
   // Boundaries are only used to draw the selected barrio. Membership is indexed on the server.
@@ -124,7 +130,7 @@
     if(view.gx1<=view.gx0||view.gy1<=view.gy0)return;
     for(const loaded of [cellData,pendingCells])if(loaded?.key===key&&covers(loaded,view))return;
     const grid={...cellGrid(.5),key},generation=++cellGeneration,edge=(x,y)=>map.unproject([x*grid.size,y*grid.size],grid.z);
-    cellController?.abort();cellController=new AbortController();pendingCells=grid;
+    cellController?.abort();cellController=new AbortController();pendingCells=grid;$('map-loading').hidden=false;
     const nw=edge(grid.gx0,grid.gy0),se=edge(grid.gx1,grid.gy1),params=cellParams(snapshot);
     params.set('bbox',[Math.max(-180,nw.lng),Math.max(-85,se.lat),Math.min(180,se.lng),Math.min(85,nw.lat)].join(','));
     params.set('cols',grid.gx1-grid.gx0);params.set('rows',grid.gy1-grid.gy0);
@@ -138,7 +144,7 @@
       });
       cellData=grid;observations.draw();
     }catch(error){if(generation===cellGeneration&&error.name!=='AbortError'){$('map-status').hidden=false;$('map-status').textContent=t('Could not load');}}
-    finally{if(generation===cellGeneration)pendingCells=null;}
+    finally{if(generation===cellGeneration){pendingCells=null;$('map-loading').hidden=true;}}
   }
   let merged=null;
   function displayCells(){
@@ -216,7 +222,7 @@
   function tile(row,items){
     const button=document.createElement('button');button.className='tile';button.dataset.objectId=itemId(row);button.style.borderBottomColor=color(row);
     button.setAttribute('aria-label',[label(row),row.text||row.t,row.barrio].filter(Boolean).join(' · '));button.setAttribute('aria-pressed',String(itemId(row)===selectedId));
-    const image=document.createElement('img');image.loading='lazy';cropStorage.image(image,row.crop);image.alt='';button.append(image);
+    const image=document.createElement('img');image.loading='lazy';thumbImage(image,row.crop,384);image.alt='';button.append(image);
     if(row.view_count>1){const badge=document.createElement('span');badge.className='view-count';badge.textContent=`${row.view_count} ${t('views')}`;button.append(badge);}
     button.onclick=()=>{browse=items;open(row);};return button;
   }
@@ -419,7 +425,7 @@
       for(const g of chosen){
         const key=g.cell.sample;keep.add(key);let el=this.previews.get(key);
         if(!el){
-          el=L.DomUtil.create('button','map-preview',this.root);el.type='button';const img=document.createElement('img');img.alt='';cropStorage.image(img,g.cell.crop);el.append(img);
+          el=L.DomUtil.create('button','map-preview',this.root);el.type='button';const img=document.createElement('img');img.alt='';thumbImage(img,g.cell.crop,128);el.append(img);
           L.DomEvent.on(el,'click',event=>{L.DomEvent.stop(event);if(map.dragging?.moved())return;browse=panelItems;open({id:el.cell.sample},el.cell.sample);});
           L.DomEvent.on(el,'dblclick',L.DomEvent.stop);
           this.previews.set(key,el);

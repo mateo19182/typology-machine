@@ -79,7 +79,14 @@ footer { padding: 28px 16px; color: var(--dim); display: flex; flex-wrap: wrap; 
 .nearby { display:flex; gap:6px; overflow-x:auto; padding:10px 0; max-width:100%; }.nearby[hidden] { display:none; }.nearby .nearby-item { flex:none; width:72px; height:65px; padding:3px; border:1px solid; border-radius:3px; opacity:.55; }.nearby .nearby-item[aria-pressed="true"] { opacity:1; background:#ffffff18; }.nearby img { width:100%; height:100%; object-fit:contain; }
 .observation-layer, .observation-canvas { position: absolute; left: 0; top: 0; pointer-events: none; }
 .map-preview { position: absolute; width: 46px; height: 46px; padding: 0; border: 2px solid var(--edge, #ddd); border-radius: 4px; background: var(--tile); transform: translate(-50%,-100%); transform-origin: 50% 100%; z-index: 101; cursor: pointer; pointer-events: auto; box-shadow: 0 2px 8px #000b; transition: opacity .15s, transform .12s; }
-.map-preview img { display: block; width: 100%; height: 100%; object-fit: cover; border-radius: 2px; }
+.map-preview { background: linear-gradient(100deg, #1a1b1f 30%, #2a2b30 50%, #1a1b1f 70%) 0 0 / 300% 100%; animation: preview-wait 1.2s linear infinite; }
+.map-preview img { display: block; width: 100%; height: 100%; object-fit: cover; border-radius: 2px; opacity: 0; transition: opacity .2s; }
+.map-preview img.loaded { opacity: 1; }.map-preview:has(img.loaded) { animation: none; background: var(--tile); }
+@keyframes preview-wait { to { background-position: -150% 0; } }
+.map-loading { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 900; display: flex; align-items: center; gap: 8px; padding: 6px 12px; border: 1px solid #37383c; border-radius: 999px; background: #101216e6; color: var(--fg); font-size: 11px; pointer-events: none; box-shadow: 0 4px 16px #0008; }
+.map-loading[hidden] { display: none; }
+.map-loading .spinner { width: 12px; height: 12px; border: 2px solid #ffffff33; border-top-color: var(--amber); border-radius: 50%; animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 .map-preview::after, .map-focus .card::after { content: ""; position: absolute; left: 50%; bottom: -7px; margin-left: -5px; border: 5px solid transparent; border-top: 6px solid var(--edge, #ddd); border-bottom: 0; }
 .map-preview:hover, .map-preview:focus-visible { z-index: 102; opacity: 1 !important; transform: translate(-50%,-100%) scale(1.8); }
 .observation-layer.has-focus .map-preview { opacity: .35; }
@@ -89,7 +96,7 @@ footer { padding: 28px 16px; color: var(--dim); display: flex; flex-wrap: wrap; 
 .map-focus .card::after { left: calc(50% - var(--shift, 0px)); }.map-focus.below .card { bottom: auto; top: 26px; }.map-focus.below .card::after { bottom: auto; top: -7px; border-top: 0; border-bottom: 6px solid var(--edge); }
 .map-focus .card img { display: block; max-width: 180px; max-height: 130px; min-width: 48px; min-height: 48px; object-fit: contain; background: var(--tile); border-radius: 3px; }.map-focus .card img[hidden] { display: none; }
 @keyframes focus-pulse { from { transform: scale(.45); opacity: 1 } to { transform: scale(1.7); opacity: 0 } }
-@media (prefers-reduced-motion: reduce) { .map-focus .pulse { animation: none; } .map-preview { transition: none; } }.detail button:disabled { opacity: .3; cursor: default; }
+@media (prefers-reduced-motion: reduce) { .map-focus .pulse, .map-preview, .map-loading .spinner { animation: none; } .map-preview { transition: none; } }.detail button:disabled { opacity: .3; cursor: default; }
 #map-status[hidden] { display:none; }
 #map-status { position: absolute; bottom: 24px; left: 12px; z-index: 700; padding: 5px 8px; background: #101216db; color: #ccc6bb; font-size: 10px; pointer-events: none; max-width: calc(100vw - 24px); }
 body[data-view="wall"] #map-status { display: none; }
@@ -179,7 +186,7 @@ body[data-view="map"] #shuffle { display:none; }body[data-view="map"] #focus-res
   <span id="filter-summary" class="filter-summary"></span>
   <div class="browse-actions"><button id="focus-results">Show on map</button><button id="shuffle">Shuffle wall</button><button id="share">Copy link</button></div>
 </div>
-<div id="map"></div><div id="map-status" hidden></div>
+<div id="map"><div id="map-loading" class="map-loading" role="status"><span class="spinner" aria-hidden="true"></span><span id="map-loading-text">Loading map…</span></div></div><div id="map-status" hidden></div>
 <section id="map-results" class="map-results" aria-label="Objects in map area">
   <div class="results-heading"><span id="results-title">In this area</span><button id="results-clear" hidden>Back to area</button><button id="results-toggle" aria-expanded="true">Hide</button></div>
   <div id="map-thumbnails" class="map-thumbnails"></div>
@@ -218,6 +225,6 @@ body[data-view="map"] #shuffle { display:none; }body[data-view="map"] #focus-res
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="crop-storage.js"></script>
-<script src="app.js?v=31dedcb7fa85"></script>
+<script src="app.js?v=b316dca36595"></script>
 </body>
 </html>

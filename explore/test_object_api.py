@@ -110,16 +110,36 @@ class ObjectAPITest(unittest.TestCase):
         self.assertEqual(self.request(layers='')['total'], 0)
 
     def test_cells_are_compact_grid_rows_with_previews(self):
-        found = self.request('cells', bbox='0,0,4,2', cols=4, rows=1, group=0)['cells']
+        found = self.request('cells', bbox='0,0,4,2', cols=8, rows=1, group=0)['cells']
         self.assertEqual(sum(c[2] for c in found), 69)
-        single = next(c for c in found if c[0] == 3)
-        self.assertEqual(single[:3], [3, 0, 1])
+        single = next(c for c in found if c[0] == 6)
+        self.assertEqual(single[:3], [6, 0, 1])
         self.assertEqual(single[5:], [['#abc'], 'b', 'b', '/proposal-assets/b.jpg'])
-        crowd = next(c for c in found if c[0] == 1)
+        crowd = next(c for c in found if c[0] == 2)
         self.assertIsNone(crowd[6])
         self.assertTrue(crowd[8].startswith('/proposal-assets/'))
         with self.assertRaises(HTTPError):
             self.request('cells', cols=4, rows=1)
+
+    def test_cells_give_one_preview_per_block(self):
+        found = self.request('cells', bbox='0,0,4,2', cols=4, rows=1, group=0)['cells']
+        self.assertEqual(len(found), 2)
+        self.assertEqual([c[0] for c in found if c[8]], [1])
+
+    def test_thumbnails_are_small_cached_and_confined_to_crops(self):
+        from PIL import Image
+        crop = self.site / 'proposal-assets/a.jpg'
+        crop.parent.mkdir(parents=True, exist_ok=True)
+        Image.new('RGB', (900, 300), 'red').save(crop)
+        with urlopen(self.origin + '/api/thumb/128/proposal-assets/a.jpg') as response:
+            self.assertIn('max-age', response.headers['Cache-Control'])
+            image = Image.open(io.BytesIO(response.read()))
+        self.assertEqual(image.size, (128, 43))
+        self.assertTrue((self.state.parent / 'thumbs/128/proposal-assets/a.jpg').exists())
+        for path in ('128/proposal-assets/missing.jpg', '64/proposal-assets/a.jpg', '128/../site/proposal-assets/a.jpg', '128/barrios.geojson'):
+            with self.subTest(path=path), self.assertRaises(HTTPError) as caught:
+                urlopen(self.origin + '/api/thumb/' + path)
+            self.assertEqual(caught.exception.code, 404)
 
     def test_group_filters_choose_retained_viewpoint(self):
         obj = self.request('object', id='group-ab')

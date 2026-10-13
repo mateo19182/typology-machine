@@ -404,15 +404,22 @@ def cells(db, f, box, cols, rows, meta, cluster_colors=False):
         shade = r['shade'] or colors[r['category']]
         if shade not in group['colors']:
             group['colors'].append(shade)
+    # Previews are spaced wider than four cells, so only the busiest cell in each
+    # 4x4 block carries one. This keeps crop paths out of most of the payload.
+    blocks = {}
+    for g in groups.values():
+        block = (g['cx'] // 4, g['cy'] // 4)
+        if block not in blocks or g['count'] > blocks[block]['count']:
+            blocks[block] = g
     crops = {}
-    samples = [g['sample'] for g in groups.values()]
+    samples = [g['sample'] for g in blocks.values()]
     for i in range(0, len(samples), 500):
         chunk = samples[i:i+500]
         crops.update(db.execute(f"SELECT id,json_extract(payload,'$.crop') FROM records WHERE id IN ({','.join('?'*len(chunk))})", chunk))
     for group in groups.values():
         group['lo'] /= group['count']; group['la'] = latitude(group.pop('my')/group['count'])
         group.pop('best')
-        if crops.get(group['sample']):
+        if crops.get(group['sample']) and blocks[(group['cx'] // 4, group['cy'] // 4)] is group:
             group['crop'] = crops[group['sample']]
         else:
             group.pop('sample')
@@ -445,6 +452,31 @@ def export_record(row, origin, crop_base):
     }
 
 
+THUMB_SIZES = (128, 384)
+
+
+def thumbnail(site, cache, size, relative):
+    """Return a cached JPEG no larger than size px for a public crop path."""
+    if size not in THUMB_SIZES or not re.fullmatch(r'(img|proposal-assets)/[A-Za-z0-9_./-]+\.jpg', relative) \
+            or any(part in ('', '.', '..') for part in relative.split('/')):
+        raise LookupError('Not a crop')
+    target = cache / str(size) / relative
+    if not target.exists():
+        source = site / relative
+        if not source.is_file():
+            raise LookupError('Crop not found')
+        from PIL import Image
+        with Image.open(source) as image:
+            image.draft('RGB', (size, size))  # Lets JPEG decoding skip full resolution.
+            image = image.convert('RGB')
+            image.thumbnail((size, size))
+            target.parent.mkdir(parents=True, exist_ok=True)
+            temp = target.with_name(target.name + f'.{threading.get_ident()}.tmp')
+            image.save(temp, 'JPEG', quality=74, optimize=True)
+            temp.replace(target)
+    return target.read_bytes()
+
+
 def csv_cell(value):
     text = '' if value is None else encode(value) if isinstance(value, (dict, list)) else str(value)
     if isinstance(value, str) and text.lstrip().startswith(('=', '+', '-', '@')):
@@ -456,6 +488,8 @@ class API:
     def __init__(self, state=STATE, site=SITE, origin=None):
         self.state, self.site, self.origin = state, site, origin or os.environ.get('TYPOLOGY_PUBLIC_URL', 'http://127.0.0.1:8790')
         self.capacity = threading.BoundedSemaphore(4)
+        self.thumb_capacity = threading.BoundedSemaphore(6)
+        self.thumbs = state.parent / 'thumbs'
 
     def metadata(self):
         return json.loads((self.state / 'current.json').read_text())
@@ -510,6 +544,8 @@ class API:
         api = self
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
+                if self.path.startswith('/api/thumb/'):
+                    self.thumb(); return
                 if not api.capacity.acquire(timeout=10):
                     self.send_error(503, 'Busy; retry shortly'); return
                 try:
@@ -543,6 +579,28 @@ class API:
                     self.send_error(500, 'Query failed')
                 finally:
                     api.capacity.release()
+
+            def thumb(self):
+                # Thumbnails decode images, so they get their own slots instead of queuing behind queries.
+                if not api.thumb_capacity.acquire(timeout=10):
+                    self.send_error(503, 'Busy; retry shortly'); return
+                try:
+                    size, _, relative = urlsplit(self.path).path[len('/api/thumb/'):].partition('/')
+                    body = thumbnail(api.site, api.thumbs, int(size) if size.isdigit() else 0, relative)
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'image/jpeg')
+                    self.send_header('Cache-Control', 'public, max-age=604800')
+                    self.send_header('Content-Length', str(len(body)))
+                    self.end_headers(); self.wfile.write(body)
+                except LookupError as error:
+                    self.send_error(404, str(error))
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+                except Exception as error:
+                    self.log_error('%s', type(error).__name__)
+                    self.send_error(500, 'Thumbnail failed')
+                finally:
+                    api.thumb_capacity.release()
 
             def json(self, value):
                 body = encode(value).encode()
