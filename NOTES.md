@@ -343,3 +343,20 @@ Newer Google downloads continue locally and are outside this frozen inventory.
 - Refresh and follow-up timers are paused during the initial copy; backfill and
   OCR continue. The migration resumes timers and any paused writers after the
   switch. No original imagery, detections, masks, OCR, or reviewed groups deleted.
+
+
+## 2026-10-13: R2 crops and webpage performance options
+
+- User authorized R2 delivery for crops and requested options for other webpage
+  improvements. Created `typology-crops` with custom domain
+  `crops.typology.m19182.dev`; domain ownership and TLS are active.
+- S3 credentials are stored outside the repository with owner-only permissions.
+  A public sample matched local SHA-256; a 32-crop S3 smoke upload succeeded.
+- Full resumable upload started under `typology-r2-crops.service`, with hourly
+  follow-up. Browser activation waits for the complete inventory and public
+  checks. Thumbnail/detail fallback was tested by aborting remote image requests
+  in a headless browser; local images loaded without JavaScript errors.
+- Map options proposed separately: reduce main-thread work with precomputed barrio
+  membership and compact indexes; add viewport/paginated queries backed by SQLite
+  spatial/text indexes; or switch map rendering to MapLibre with PMTiles and a
+  separate search/detail mechanism. No map architecture change implemented yet.

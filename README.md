@@ -602,3 +602,40 @@ bounded expansion, not citywide deduplication. It writes separate proposals unde
 `apple/multicategory_dedupe/followup_20261012` and builds
 `comparison_share/multicategory-followup.html` when complete. Existing approved
 map groups remain selected. People and pets are excluded from identity matching.
+
+### R2 crop delivery
+
+Public crop storage uses bucket `typology-crops` and custom domain
+`https://crops.typology.m19182.dev`. Only JPEG crop URLs referenced by the current
+published map and legacy shop-sign data are uploaded. Panoramas, context images,
+masks, review artifacts, and credentials stay local. The October 13 inventory
+contains 1,159,800 crops, totaling 33.3 GB decimal.
+
+`explore/publish_crops_r2.py --inventory-only` inventories the published assets.
+Use `--limit 32` for an upload smoke test, or `--activate` for a complete resumable
+upload followed by public SHA-256 checks and activation. Credentials belong in
+`~/.config/typology-machine/r2.env`, mode 0600, with `AWS_ACCESS_KEY_ID` and
+`AWS_SECRET_ACCESS_KEY`. Use an R2 Object Read & Write token scoped to this bucket.
+Credentials never enter the repository or browser. Object uploads include a
+Content-MD5 check and SHA-256 metadata. An SQLite checkpoint outside the migrating
+dataset records successful uploads and detects changed local files.
+
+`typology-r2-crops.service` runs the full publication; its timer checks hourly
+for additions. Status is `~/.local/state/typology-machine/r2/status.json`.
+The first full upload must finish before `data/coruna/site/crop-storage.json`
+switches browser crop requests to R2. A failed or bounded upload cannot activate
+remote delivery. The browser retries a missing remote crop locally once, covering
+new observations published before the next upload. Downloaded records use the
+configured remote crop URLs. Full street-image requests retain their local routes.
+
+To revert delivery immediately, replace the published `crop-storage.json` with
+`{"base_url":null}` and stop the R2 timer/service before it can reactivate.
+Page exports preserve this runtime configuration. Uploaded objects are retained;
+the uploader never deletes bucket contents. Crops use a one-day public cache TTL.
+
+Measured October 13 before the R2 switch: all map layers total 861.6 MB decoded.
+The default graffiti/street-name layers total 114.2 MB decoded, approximately
+8.9 MB encoded in the local browser test. Initial legacy data adds 6.3 MB decoded.
+That desktop test used about 199 MB JS heap and observed main-thread tasks up to
+589 ms. These are local desktop measurements, not mobile or public-network timings.
+R2 addresses image delivery; viewport queries or tiled data are separate work.

@@ -41,6 +41,7 @@
   let manifest=null, availableManifest=null, selectedId='', restoring=true, ready=false, refreshing=false, exporting=false;
   let panelItems=[], panelShown=0, pointSelection=null, barrioLayer=null;
   let barrioData=null, barrios=[], legacy={meta:{},signs:[]};
+  let cropStorage=CropStorage.create();
   const loaded=new Map(), enabled=new Set(), pending=new Map(), failed=new Set();
   const filterCache=new WeakMap(), barrioCache=new Map();
   const categories=new Map(), clusters=new Map();
@@ -209,7 +210,7 @@
   function tile(row,items){
     const button=document.createElement('button');button.className='tile';button.dataset.objectId=itemId(row);button.style.borderBottomColor=color(row);
     button.setAttribute('aria-label',[label(row),row.text||row.t,row.barrio].filter(Boolean).join(' · '));button.setAttribute('aria-pressed',String(itemId(row)===selectedId));
-    const image=document.createElement('img');image.loading='lazy';image.src=row.crop;image.alt='';button.append(image);
+    const image=document.createElement('img');image.loading='lazy';cropStorage.image(image,row.crop);image.alt='';button.append(image);
     if(row.views?.length>1){const badge=document.createElement('span');badge.className='view-count';badge.textContent=`${row.views.length} ${t('views')}`;button.append(badge);}
     button.onclick=()=>{browse=items;open(row);};return button;
   }
@@ -233,8 +234,8 @@
     const row=curSign,on=!!(full&&row.raw),img=$('d-img'),status=$('image-status');
     status.textContent=on?t('Loading street image…'):'';img.parentElement.classList.toggle('is-loading',on);
     img.onload=()=>{status.textContent='';img.parentElement.classList.remove('is-loading');};
-    img.onerror=()=>{img.parentElement.classList.add('is-loading');status.textContent=on?t('Street image could not load. Switch to crop, then try again.'):t('Image could not load.');delete detail.dataset.full;};
-    img.style.width=on?'':Math.min(800,innerWidth-32,innerHeight*.52*(row.w/row.h||1))+'px';img.src=on?row.raw:row.crop;img.alt=on?`${t('Street image containing')} ${label(row)}`:row.text||row.t||label(row);
+    const imageFailure=()=>{img.parentElement.classList.add('is-loading');status.textContent=on?t('Street image could not load. Switch to crop, then try again.'):t('Image could not load.');delete detail.dataset.full;};
+    img.style.width=on?'':Math.min(800,innerWidth-32,innerHeight*.52*(row.w/row.h||1))+'px';if(on){img.onerror=imageFailure;img.src=row.raw;}else cropStorage.image(img,row.crop,imageFailure);img.alt=on?`${t('Street image containing')} ${label(row)}`:row.text||row.t||label(row);
     if(on&&row.bx){const[x0,y0,x1,y1]=row.bx;Object.assign($('d-box').style,{left:x0*100+'%',top:y0*100+'%',width:(x1-x0)*100+'%',height:(y1-y0)*100+'%'});detail.dataset.full='1';}else delete detail.dataset.full;
     $('full').setAttribute('aria-pressed',String(on));$('full').textContent=t(on?'show crop':'full image');$('full').hidden=!row.raw;
   }
@@ -253,7 +254,7 @@
     $('prev').disabled=$('next').disabled=browse.length<2;
     $('d-map').onclick=e=>{e.preventDefault();setView('map');map.setView([row.la,row.lo],18);};
     const target=$('viewpoints');target.replaceChildren();target.hidden=views.length<2;
-    for(const item of views){const button=document.createElement('button');button.className='nearby-item';button.setAttribute('aria-label',`${t('viewpoint')} ${views.indexOf(item)+1}`);button.setAttribute('aria-pressed',String(item.id===row.id));button.style.borderColor=color(item);const image=document.createElement('img');image.src=item.crop;image.loading='lazy';image.alt='';button.append(image);button.onclick=()=>open(object,item);target.append(button);}
+    for(const item of views){const button=document.createElement('button');button.className='nearby-item';button.setAttribute('aria-label',`${t('viewpoint')} ${views.indexOf(item)+1}`);button.setAttribute('aria-pressed',String(item.id===row.id));button.style.borderColor=color(item);const image=document.createElement('img');cropStorage.image(image,item.crop);image.loading='lazy';image.alt='';button.append(image);button.onclick=()=>open(object,item);target.append(button);}
     $('nearby').replaceChildren();$('nearby').hidden=true;
     $('group-text').hidden=views.length<2||!object.group_text;$('group-text').textContent=object.group_text?t('Text across viewpoints (automatic OCR):')+'\n'+object.group_text:'';
     detail.setAttribute('open','');detail.setAttribute('aria-modal',String(document.body.dataset.view==='wall'));showPic();$('close').focus();
@@ -276,14 +277,14 @@
       score:row.score??null,prompt:row.prompt||null,text:row.group_text||row.text||row.t||'',
       ocr_model:row.ocr_model||null,view_id:row.view_id||null,run_id:row.run_id||null,
       snapshot_id:row.snapshot_id||null,provider_url:row.u||null,
-      crop_url:row.crop?new URL(row.crop,location.href).href:null,
+      crop_url:row.crop?new URL(cropStorage.url(row.crop),location.href).href:null,
       context_url:row.raw?new URL(row.raw,location.href).href:null,
       box_normalized:row.bx||null,
       observations:views.map(v=>({id:v.id,source:sourceOf(v),capture_date:v.d||null,
         latitude:v.la,longitude:v.lo,location_basis:v.location_basis||(v.proposal?'camera':'estimated_object'),
         barrio:v.barrio,barrio_id:v.barrio_id,score:v.score??null,text:v.text||v.t||'',
         run_id:v.run_id||null,view_id:v.view_id||null,provider_url:v.u||null,
-        crop_url:v.crop?new URL(v.crop,location.href).href:null,context_url:v.raw?new URL(v.raw,location.href).href:null}))
+        crop_url:v.crop?new URL(cropStorage.url(v.crop),location.href).href:null,context_url:v.raw?new URL(v.raw,location.href).href:null}))
     };
   }
   function downloadMetadata(rows){
@@ -376,7 +377,8 @@
     restoring=false;saveState();
   }
 
-  const initial=await Promise.allSettled([fetchJSON('data.json'),fetchJSON('barrios.geojson'),fetchJSON('layers/manifest.json')]);
+  const initial=await Promise.allSettled([fetchJSON('data.json'),fetchJSON('barrios.geojson'),fetchJSON('layers/manifest.json'),fetchJSON('crop-storage.json')]);
+  if(initial[3].status==='fulfilled')cropStorage=CropStorage.create(initial[3].value);
   if(initial[0].status==='fulfilled')legacy=initial[0].value;
   if(initial[1].status==='fulfilled')prepareBarrios(initial[1].value);else $('barrio-status').textContent=t('Municipal barrio boundaries unavailable.');
   if(initial[2].status==='fulfilled')manifest=initial[2].value;

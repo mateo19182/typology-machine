@@ -1,0 +1,9 @@
+[Unit]
+Description=Publish new Typology crops hourly
+
+[Timer]
+OnBootSec=10min
+OnUnitInactiveSec=1h
+
+[Install]
+WantedBy=timers.target

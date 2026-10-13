@@ -1,0 +1,15 @@
+const assert=require('node:assert/strict');
+const {create}=require('./crop-storage.js');
+const storage=create({base_url:'https://crops.example.com/crops/v1'});
+assert.equal(storage.url('/proposal-assets/apple/run/view/person-0-1.jpg'),'https://crops.example.com/crops/v1/proposal-assets/apple/run/view/person-0-1.jpg');
+assert.equal(storage.url('img/a.jpg'),'https://crops.example.com/crops/v1/img/a.jpg');
+for(const path of ['/ctx/a.jpg','/proposal-context/apple/a.jpg','https://other.example/a.jpg','/img/../a.jpg'])assert.equal(storage.url(path),path);
+assert.equal(create({base_url:'http://insecure.example'}).url('img/a.jpg'),'img/a.jpg');
+assert.equal(create().url('img/a.jpg'),'img/a.jpg');
+let errors=0;const image={};
+storage.image(image,'img/a.jpg',()=>errors++);
+assert.equal(image.src,'https://crops.example.com/crops/v1/img/a.jpg');
+image.onerror();assert.equal(image.src,'img/a.jpg');assert.equal(errors,0);
+image.onerror();assert.equal(errors,1);
+storage.image(image,'img/b.jpg',()=>errors++);image.onerror();assert.equal(image.src,'img/b.jpg');
+console.log('Crop URL routing and one-time local fallback passed.');
