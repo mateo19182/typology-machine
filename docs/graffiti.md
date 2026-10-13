@@ -4,6 +4,85 @@
 
 The first run used 225 training images and 29 held-out images, 300 optimization steps, rank 4, 512px inputs, and seed 19182. Only UNet attention adapters train; the base model stays frozen. The held-out denoising loss changed from 0.154809 to 0.154611. That tiny change does not establish improved visual quality. Fixed-seed base and adapted samples both generated successfully and differed visibly.
 
+The reviewed dataset and completed adapter also have private Hugging Face
+repositories. [Dataset and model publishing](huggingface.md) covers exports,
+provenance, loading and uploads after future runs.
+
+## Next experiment with FLUX.2
+
+The next training target is
+[`black-forest-labs/FLUX.2-klein-base-4B`](https://huggingface.co/black-forest-labs/FLUX.2-klein-base-4B).
+It has Apache 2.0 weights and an undistilled base checkpoint intended for fine-tuning.
+[BFL's training guide](https://docs.bfl.ai/flux_2/flux2_klein_training) describes the
+base variants. The 9B variant and 32B FLUX.2 dev have different license and memory
+requirements. The 4B model is the starting point for this project's 24 GB RTX 3090.
+An SD 1.5 LoRA cannot be loaded into FLUX; this requires a fresh training run.
+
+`prepare_flux_training.py` creates a separate experiment with the same reviewed
+image bytes and train/validation assignments. It pins the base model and official
+Diffusers trainer revisions, starts at 512px with aspect-ratio buckets, uses rank
+16 adapters, NF4 quantization, cached latents, gradient checkpointing and CPU offload.
+The initial plan is 1,200 steps, not an established optimum. Compare fixed-seed
+base and adapted previews and inspect checkpoints before choosing a final model.
+The generic captions are a limitation; future individually reviewed descriptions
+should have their own versioned dataset.
+
+Preparation does not download weights or start GPU work:
+
+```bash
+export FLUX_HOME=/mnt/data/projects/typology-machine/graffiti-flux2
+/mnt/data/projects/typology-machine/hub-venv/bin/python \
+  explore/prepare_flux_training.py prepare --home "$FLUX_HOME"
+```
+
+Set up the pinned trainer in its own environment. Reuse the project's installed
+Torch packages and the optional Hugging Face environment's dataset packages,
+adjusting the Python version. Set up `hub-venv` as described in
+[dataset and model publishing](huggingface.md) first:
+
+```bash
+git clone https://github.com/huggingface/diffusers "$FLUX_HOME/diffusers"
+git -C "$FLUX_HOME/diffusers" checkout 916a5791ed5f29d966200d2eee53f06862ec4434
+uv venv --python .venv/bin/python "$FLUX_HOME/venv"
+"$FLUX_HOME/venv/bin/python" - <<'PY'
+from pathlib import Path
+import site
+paths = [Path.cwd() / '.venv/lib/python3.13/site-packages',
+         Path('/mnt/data/projects/typology-machine/hub-venv/lib/python3.13/site-packages')]
+assert all(path.is_dir() for path in paths)
+(Path(site.getsitepackages()[0]) / 'typology-base.pth').write_text(
+    '\n'.join(str(path) for path in paths) + '\n')
+PY
+uv pip install --python "$FLUX_HOME/venv/bin/python" --no-deps \
+  -e "$FLUX_HOME/diffusers" -r explore/flux-requirements.txt
+```
+
+The initial local setup passed the trainer import, argument-parser and TensorBoard
+checks without downloading model weights. Its
+[official requirements](https://github.com/huggingface/diffusers/blob/916a5791ed5f29d966200d2eee53f06862ec4434/examples/dreambooth/requirements_flux.txt)
+are the reference. Keep this environment separate from the public SD worker.
+NF4 supports this GPU; the trainer's FP8 mode requires a newer GPU architecture.
+
+After the current GPU work finishes, run:
+
+```bash
+"$FLUX_HOME/venv/bin/python" explore/prepare_flux_training.py train \
+  --home "$FLUX_HOME" --publish --namespace mateo-19182
+```
+
+The wrapper refuses a busy GPU, changed trainer source, changed dataset manifests
+or an already started experiment. It records completion only after the trainer
+succeeds and writes the final adapter. `--publish` then uploads the reviewed dataset
+and FLUX adapter to private Hugging Face repositories. The official trainer consumes
+only the `train` split. Its prompt previews do not compute a held-out loss on the
+29 validation images, so the model card makes no held-out quality claim.
+
+[BFL's LoRA walkthrough](https://huggingface.co/blog/black-forest-labs/flux-2-klein-lora)
+also recommends testing a base-trained adapter on the distilled
+`black-forest-labs/FLUX.2-klein-4B` checkpoint for four-step inference. That needs its
+own visual comparison before replacing the website's SD worker. The current worker
+continues to use the completed SD 1.5 experiment until a FLUX run has been evaluated.
+
 ## Environment and model
 
 Keep optional image-generation packages out of the website's normal environment. On the deployed machine, an isolated environment on the data disk reuses the existing project's Torch/Transformers packages through a `.pth` file, while installing Diffusers and PEFT separately:

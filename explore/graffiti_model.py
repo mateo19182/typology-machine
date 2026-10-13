@@ -25,6 +25,8 @@ def model_path(home):
 
 
 def train(home, steps=300, seed=19182):
+    from publish_huggingface import validate_reviewed_dataset
+    summary, rows = validate_reviewed_dataset(home / 'dataset')
     import numpy as np
     import torch
     from PIL import Image, ImageOps
@@ -44,16 +46,8 @@ def train(home, steps=300, seed=19182):
         write_json(home / 'training.json', state)
         print(json.dumps(changes), flush=True)
     report()
-    rows = {}
-    for split in ('train', 'validation'):
-        file = home / 'dataset' / split / 'metadata.jsonl'
-        rows[split] = [json.loads(line) for line in file.read_text().splitlines() if line.strip()]
-        if not rows[split]:
-            raise ValueError(f'Empty {split} dataset')
-    summary = json.loads((home / 'dataset/summary.json').read_text())
-    if not summary.get('reviewed'):
-        raise ValueError('Review dataset contact sheets and mark summary reviewed before training')
-    report(train_count=len(rows['train']), validation_count=len(rows['validation']), dataset_summary=summary)
+    report(train_count=len(rows['train']), validation_count=len(rows['validation']), dataset_summary=summary,
+           dataset_manifest_sha256=summary['manifest_sha256'])
     tokenizer = CLIPTokenizer.from_pretrained(base, subfolder='tokenizer', local_files_only=True)
     encoder = CLIPTextModel.from_pretrained(base, subfolder='text_encoder', variant='fp16', torch_dtype=dtype, local_files_only=True).to('cuda').eval()
     vae = AutoencoderKL.from_pretrained(base, subfolder='vae', variant='fp16', torch_dtype=dtype, local_files_only=True).to('cuda').eval()
@@ -137,7 +131,11 @@ def main():
     parser.add_argument('--strength',type=float,default=.8)
     parser.add_argument('--base',action='store_true')
     parser.add_argument('--output',type=Path)
+    parser.add_argument('--publish',action='store_true',help='Upload the completed adapter and reviewed dataset to private Hugging Face repos')
+    parser.add_argument('--namespace',help='Hugging Face namespace; defaults to the authenticated account')
     args=parser.parse_args()
+    if args.publish and args.action!='train':
+        parser.error('--publish applies to training')
     if args.action=='train':
         try: train(args.home,args.steps,args.seed)
         except Exception as error:
@@ -145,6 +143,10 @@ def main():
             state=json.loads(path.read_text()) if path.exists() else {}
             write_json(path,{**state,'stage':'failed','error':str(error),'updated':time.time()})
             raise
+        if args.publish:
+            from publish_huggingface import publish_run
+            result=publish_run(args.home,args.home/f'hub-{int(time.time())}',args.namespace,upload=True)
+            print(json.dumps(result,indent=2))
     else:
         generate(args.home,args.prompt,args.output or args.home/'sample.png',args.seed,args.strength,not args.base)
 

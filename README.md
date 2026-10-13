@@ -20,6 +20,10 @@ of the filtered records. Detections and OCR are experimental, not verified label
 - **Living typology book** creates printable A4 contact sheets with category, date, source and neighbourhood filters, editable captions, object links and PDF output through browser print.
 - **Graffiti generator** runs a local SD 1.5 LoRA trained on 225 selected crops, with 29 held out. This is an early experiment, not an established quality improvement. [Training and serving](docs/graffiti.md).
 
+Private [Hugging Face datasets and model exports](docs/huggingface.md) preserve the
+archive metadata and reviewed graffiti training run. A separate FLUX.2 klein Base
+4B training plan is prepared for the next graffiti experiment.
+
 Build the wandering graph from an existing query index and locally cached DINOv2 model:
 
 ```sh

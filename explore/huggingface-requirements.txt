@@ -1,0 +1,7 @@
+# Optional export/validation environment; no GPU dependencies.
+huggingface-hub==2.2.0
+pyarrow==26.0.0
+datasets==5.1.0
+Pillow>=12.3.0
+numpy>=2.5.4
+PyYAML>=6.0
