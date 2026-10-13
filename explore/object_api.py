@@ -404,11 +404,11 @@ def cells(db, f, box, cols, rows, meta, cluster_colors=False):
         shade = r['shade'] or colors[r['category']]
         if shade not in group['colors']:
             group['colors'].append(shade)
-    # Previews are spaced wider than four cells, so only the busiest cell in each
-    # 4x4 block carries one. This keeps crop paths out of most of the payload.
+    # Previews are spaced wider than three cells, so only the busiest cell in each
+    # 3x3 block carries one. This keeps crop paths out of most of the payload.
     blocks = {}
     for g in groups.values():
-        block = (g['cx'] // 4, g['cy'] // 4)
+        block = (g['cx'] // 3, g['cy'] // 3)
         if block not in blocks or g['count'] > blocks[block]['count']:
             blocks[block] = g
     crops = {}
@@ -419,7 +419,7 @@ def cells(db, f, box, cols, rows, meta, cluster_colors=False):
     for group in groups.values():
         group['lo'] /= group['count']; group['la'] = latitude(group.pop('my')/group['count'])
         group.pop('best')
-        if crops.get(group['sample']) and blocks[(group['cx'] // 4, group['cy'] // 4)] is group:
+        if crops.get(group['sample']) and blocks[(group['cx'] // 3, group['cy'] // 3)] is group:
             group['crop'] = crops[group['sample']]
         else:
             group.pop('sample')

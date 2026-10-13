@@ -2,7 +2,7 @@
   let language='en';
   try{language=localStorage.getItem('typology-language')||(navigator.language.startsWith('es')?'es':'en');}catch(error){language=navigator.language.startsWith('es')?'es':'en';}
   const translations={
-    'Map':'Mapa','Wall':'Galería','Shuffle':'Mezclar','Method':'Método','Object layers':'Capas','Group duplicate observations':'Agrupar observaciones duplicadas','Search text':'Buscar texto','Street or shop name…':'Calle o comercio…','Show results on map':'Ver resultados en el mapa','Capture year':'Año de captura','Include unknown dates':'Incluir fechas desconocidas','Select all':'Seleccionar todo','Clear all':'Limpiar todo','Group':'Grupo','All signs':'Todos los rótulos','Not clustered':'Sin agrupar','Cluster colors':'Colores por grupo',
+    'Map':'Mapa','Wall':'Galería','Shuffle':'Mezclar','Method':'Método','Object layers':'Capas','Group duplicate observations':'Agrupar observaciones duplicadas','Search text':'Buscar texto','Show results on map':'Ver resultados en el mapa','Capture year':'Año de captura','Include unknown dates':'Incluir fechas desconocidas','Select all':'Seleccionar todo','Clear all':'Limpiar todo','Group':'Grupo','All signs':'Todos los rótulos','Not clustered':'Sin agrupar','Cluster colors':'Colores por grupo',
     'Shop signs':'Rótulos comerciales','Street names':'Nombres de calles','Street name plates':'Placas de calles','Graffiti':'Grafitis','Traffic signs':'Señales de tráfico','Street lights':'Farolas','Bins':'Papeleras','Benches':'Bancos','Manhole covers':'Tapas de registro','Electrical cabinets':'Armarios eléctricos','Junction boxes':'Cajas de conexiones','Doors':'Puertas','Shutters':'Persianas','People':'Personas','Pets':'Mascotas','pilot':'prueba',
     'full image':'imagen completa','show crop':'ver recorte','← prev':'← anterior','next →':'siguiente →','close ✕':'cerrar ✕','map':'mapa','Objects':'Objetos','Object details':'Detalles del objeto','View':'Vista','Viewpoints of this object':'Vistas de este objeto','Observations at this location':'Observaciones en esta ubicación','Earliest capture year':'Primer año de captura','Latest capture year':'Último año de captura','Change language':'Cambiar idioma',
     'New data available · Update':'Hay datos nuevos · Actualizar','Updating selected layers…':'Actualizando las capas seleccionadas…','Update failed. Your current data is unchanged; try again.':'No se pudo actualizar. Se conservan los datos actuales; inténtalo de nuevo.','Loading street image…':'Cargando imagen de la calle…','Street image could not load. Switch to crop, then try again.':'No se pudo cargar la imagen. Cambia al recorte e inténtalo de nuevo.','Image could not load.':'No se pudo cargar la imagen.','Capture date unknown':'Fecha de captura desconocida','SAM detection · camera location':'Detección SAM · ubicación de la cámara','SAM person detection · camera location':'Persona detectada por SAM · ubicación de la cámara','OCR · automatic transcription':'OCR · transcripción automática','Cluster colors apply to previously clustered shop signs':'Los colores se aplican a los rótulos comerciales agrupados previamente','Object layers are unavailable. Saved shop signs are still available.':'Las capas no están disponibles. Los rótulos guardados siguen disponibles.','Items matching the capture-date filter':'Elementos que coinciden con el filtro de fecha','Total in snapshot; enable layer to filter by capture date':'Total de la colección; activa la capa para filtrar por fecha','loading…':'cargando…','retry':'reintentar','matches':'resultados','items':'elementos','observations':'observaciones','on':'activas','in view · click a dot to inspect':'en pantalla · pulsa un punto para inspeccionar','Captured':'Capturada','Prompt':'Prompt','score':'puntuación','views':'vistas','viewpoint':'vista','viewpoints grouped as one object':'vistas agrupadas como un objeto','Text across viewpoints (automatic OCR):':'Texto de las distintas vistas (OCR automático):','Street image containing':'Imagen de la calle con','Could not load':'No se pudo cargar','Select it to retry.':'Selecciona la capa para reintentar.','Person experiment':'Experimento de personas','street views':'vistas de calles'
@@ -21,7 +21,7 @@
     'Municipal barrio boundaries unavailable.':'No se pueden cargar los límites de los barrios.',
     'Outside mapped barrios':'Fuera de los barrios delimitados','Streets':'Calles','Satellite':'Satélite',
     'rows':'filas','Preparing download…':'Preparando descarga…','Download ready':'Descarga preparada',
-    'Bounds: Concello da Coruña':'Límites: Concello da Coruña','Image previews on map':'Vistas previas en el mapa','Loading map…':'Cargando mapa…','Preview':'Vista previa','Clear selection':'Quitar selección',
+    'Image previews on map':'Vistas previas en el mapa','Loading map…':'Cargando mapa…','Preview':'Vista previa','Clear selection':'Quitar selección',
     'Record details':'Detalles del registro','records, with matching viewpoints':'registros, con sus vistas coincidentes',
     'Reload the page to retry.':'Recarga la página para reintentar.',
     'Some selected layers failed to load. Retry before downloading.':'Algunas capas no se cargaron. Reinténtalo antes de descargar.'
@@ -70,7 +70,6 @@
     for(const barrio of barrios){const option=document.createElement('option');option.value=barrio.id;option.textContent=barrio.name;$('barrio-filter').append(option);}
     const outside=document.createElement('option');outside.value='outside';outside.textContent=t('Outside mapped barrios');$('barrio-filter').append(outside);
     $('barrio-filter').disabled=false;
-    const attribution=document.createElement('a');attribution.href=data.metadata.source;attribution.target='_blank';attribution.rel='noopener';attribution.textContent=t('Bounds: Concello da Coruña');$('barrio-status').replaceChildren(attribution);
   }
   function currentFilters(){return {
     categories:[...enabled].sort(),query:$('object-search').value.trim(),barrio:$('barrio-filter').value,
@@ -103,7 +102,7 @@
     $('count').title=busy?t('Loading selected layers…'):'';
     $('layer-summary').textContent=`${t('Filters')} · ${enabled.size}`;
     const f=currentFilters(), names=[...enabled].map(id=>t(categories.get(id)?.label||id));
-    const summary=[`${t('Minimum confidence')} ${f.confidence}`,names.join(', ')||t('No categories'),f.query?`“${f.query}”`:null,barrios.find(b=>b.id===f.barrio)?.name||(f.barrio==='outside'?t('Outside mapped barrios'):null),f.source?$('source-filter').selectedOptions[0].textContent:null,f.from!==$('year-from').min||f.to!==$('year-to').max?`${f.from}–${f.to}`:null,!f.unknown?t('Capture date known'):null,f.area?t('Only this map area'):null,!f.grouped?t('observations'):null].filter(Boolean).join(' · ');
+    const summary=[names.join(', ')||t('No categories'),f.query?`“${f.query}”`:null,barrios.find(b=>b.id===f.barrio)?.name||(f.barrio==='outside'?t('Outside mapped barrios'):null),f.source?$('source-filter').selectedOptions[0].textContent:null,f.from!==$('year-from').min||f.to!==$('year-to').max?`${f.from}–${f.to}`:null,!f.unknown?t('Capture date known'):null,f.area?t('Only this map area'):null,!f.grouped?t('observations'):null].filter(Boolean).join(' · ');
     $('filter-summary').textContent=summary;$('filter-summary').title=summary;
     $('cluster-controls').hidden=!enabled.has('store_sign')||!clusters.size;
     $('focus-results').disabled=busy||!total||queryError;
@@ -116,8 +115,10 @@
   }
   // Map cells sit on a world pixel grid and cover more than the viewport: panning redraws
   // cached cells at once, and only leaving the loaded area asks the server again.
+  // Cells are wider than the largest dot, so neighbouring clusters keep a gap.
+  const cellSize=z=>z<17?30:22;
   function cellGrid(pad){
-    const z=map.getZoom(),size=z<17?18:10,view=map.getPixelBounds(),world=map.getPixelWorldBounds(z);
+    const z=map.getZoom(),size=cellSize(z),view=map.getPixelBounds(),world=map.getPixelWorldBounds(z);
     const range=(lo,hi,min,max)=>{const a=Math.floor(lo/size),b=Math.ceil(hi/size),extra=Math.max(0,Math.min(Math.ceil((b-a)*pad),Math.floor((800-(b-a))/2)));return [Math.max(Math.ceil(min/size),a-extra),Math.min(Math.floor(max/size),b+extra)];};
     const [gx0,gx1]=range(view.min.x,view.max.x,world.min.x,world.max.x),[gy0,gy1]=range(view.min.y,view.max.y,map.project([85,0],z).y,map.project([-85,0],z).y);
     return {z,size,gx0,gx1,gy0,gy1};
@@ -152,7 +153,7 @@
     const z=map.getZoom();if(z>=cellData.z)return cellData.cells;
     if(merged?.data===cellData&&merged.z===z)return merged.cells;
     // Zooming out merges cached cells immediately; the exact grid replaces them when it arrives.
-    const size=z<17?18:10,groups=new Map();
+    const size=cellSize(z),groups=new Map();
     for(const c of cellData.cells){
       const p=map.project([c.la,c.lo],z),key=Math.floor(p.x/size)+','+Math.floor(p.y/size),g=groups.get(key);
       if(!g){groups.set(key,{...c,colors:[...c.colors],lo:c.lo*c.count,la:c.la*c.count,top:c.count});continue;}
@@ -388,14 +389,14 @@
       this.groups=[];
       for(const cell of displayCells()){
         const p=map.latLngToContainerPoint([cell.la,cell.lo]);
-        if(p.x>-20&&p.y>-20&&p.x<size.x+20&&p.y<size.y+20)this.groups.push({cell,x:p.x,y:p.y,r:cell.count>1?Math.min(12,5+Math.log2(cell.count)):4});
+        if(p.x>-20&&p.y>-20&&p.x<size.x+20&&p.y<size.y+20)this.groups.push({cell,x:p.x,y:p.y,r:cell.count>1?Math.min(10,5.5+Math.log2(cell.count)*.75):4.5});
       }
       ctx.font='bold 10px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
       for(const {cell,x,y,r} of this.groups){
         const selected=cell.id&&cell.id===selectedId;ctx.globalAlpha=focus&&!selected?.3:1;
         cell.colors.forEach((col,i)=>{ctx.beginPath();ctx.moveTo(x,y);ctx.arc(x,y,r,i/cell.colors.length*Math.PI*2,(i+1)/cell.colors.length*Math.PI*2);ctx.closePath();ctx.fillStyle=col;ctx.fill();});
         ctx.strokeStyle=selected?'#fff':'#141519';ctx.lineWidth=selected?3:1;ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.stroke();
-        if(cell.count>1){ctx.fillStyle='#fff';ctx.fillText(cell.count>99?'99+':String(cell.count),x,y);}
+        if(cell.count>1){ctx.fillStyle='#fff';ctx.font=cell.count>99?'bold 8px sans-serif':'bold 10px sans-serif';ctx.fillText(cell.count>99?'99+':String(cell.count),x,y);}
       }
       ctx.globalAlpha=1;
       if(focus){

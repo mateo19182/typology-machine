@@ -148,11 +148,10 @@ body[data-view="map"] #shuffle { display:none; }body[data-view="map"] #focus-res
     <summary id="layer-summary">Filters</summary>
     <div class="filter-panel">
       <div class="filter-heading"><b>Filters</b><button id="reset-filters">Reset filters</button><button id="filters-close" aria-label="Close filters">✕</button></div>
-      <div class="layer-search"><label for="object-search">Search text</label><input id="object-search" type="search" placeholder="Street or shop name…">
+      <div class="layer-search"><label for="object-search">Search text</label><input id="object-search" type="search">
         <label for="barrio-filter">Barrio</label><select id="barrio-filter" disabled><option value="">All barrios</option></select>
         <span id="barrio-status" role="status"></span>
       </div>
-      <div class="layer-search"><label for="confidence-filter">Minimum confidence</label><select id="confidence-filter"><option value="0.5">0.50</option><option value="0.65" selected>0.65</option><option value="0.75">0.75</option><option value="0.85">0.85</option></select></div>
       <div class="layer-heading"><span>Categories</span><button id="layers-all">Select all</button><button id="layers-none">Clear all</button></div>
       <div id="layer-options"></div>
       <details class="filter-section"><summary>Date and source</summary>
@@ -165,6 +164,7 @@ body[data-view="map"] #shuffle { display:none; }body[data-view="map"] #focus-res
       </details>
       <details class="filter-section"><summary>Display options</summary>
         <div class="layer-search"><label class="inline-control"><input id="group-duplicates" type="checkbox" checked> Group duplicate observations</label><label class="inline-control"><input id="area-filter" type="checkbox"> Only this map area</label><label class="inline-control"><input id="map-previews" type="checkbox" checked> Image previews on map</label></div>
+        <div class="layer-search"><label for="confidence-filter">Minimum confidence</label><select id="confidence-filter"><option value="0.5">0.50</option><option value="0.65" selected>0.65</option><option value="0.75">0.75</option><option value="0.85">0.85</option></select></div>
 <div class="cluster-controls" id="cluster-controls" hidden>
   <label><input type="checkbox" id="cluster-colors"> Cluster colors</label>
   <label>Group <select id="cluster-filter"><option value="">All signs</option><option value="unassigned">Not clustered</option></select></label>
@@ -225,6 +225,6 @@ body[data-view="map"] #shuffle { display:none; }body[data-view="map"] #focus-res
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="crop-storage.js"></script>
-<script src="app.js?v=b316dca36595"></script>
+<script src="app.js?v=660ec27477d6"></script>
 </body>
 </html>

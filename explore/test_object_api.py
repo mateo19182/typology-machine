@@ -122,9 +122,9 @@ class ObjectAPITest(unittest.TestCase):
             self.request('cells', cols=4, rows=1)
 
     def test_cells_give_one_preview_per_block(self):
-        found = self.request('cells', bbox='0,0,4,2', cols=4, rows=1, group=0)['cells']
+        found = self.request('cells', bbox='0,0,4,2', cols=3, rows=1, group=0)['cells']
         self.assertEqual(len(found), 2)
-        self.assertEqual([c[0] for c in found if c[8]], [1])
+        self.assertEqual([c[0] for c in found if c[8]], [0])
 
     def test_thumbnails_are_small_cached_and_confined_to_crops(self):
         from PIL import Image
