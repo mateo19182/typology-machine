@@ -15,7 +15,7 @@ of the filtered records. Detections and OCR are experimental, not verified label
 
 [Open the experiments](https://typology.m19182.dev/experiments.html):
 
-- **Visual wandering** follows saved visual matches between real street photos, holding the detected object at a fixed screen position during each crossfade. The initial graph samples 2,500 objects; no model runs while browsing.
+- **Visual wandering** follows saved visual matches between real street photos, holding the detected object at a fixed screen position during each crossfade. The graph samples up to 15,000 objects, rejects weak and differently proportioned matches, and offers shape or shape-and-colour browsing. Reliable local feature matches refine rotation, scale and position; other pairs use centred object boxes. No model runs while browsing.
 - **Coruña alphabet** composes text from an editable starter of recognized letters on real signs. [Alphabet setup and limitations](docs/alphabet.md).
 - **Living typology book** creates printable A4 contact sheets with category, date, source and neighbourhood filters, editable captions, object links and PDF output through browser print.
 - **Graffiti generator** runs a local SD 1.5 LoRA trained on 225 selected crops, with 29 held out. This is an early experiment, not an established quality improvement. [Training and serving](docs/graffiti.md).
@@ -23,10 +23,10 @@ of the filtered records. Detections and OCR are experimental, not verified label
 Build the wandering graph from an existing query index and locally cached DINOv2 model:
 
 ```sh
-uv run python explore/build_wander.py --per-category 500
+uv run python explore/build_wander.py --per-category 3000
 ```
 
-The graph is written to ignored `data/coruna/site/wander-data.json`; crop descriptors are cached under `~/.local/state/typology-machine/wander-features`. Rebuilding does not rerun detection. Full street photos use the existing context service and decode on first access. The map and wall do not load experiment assets.
+The graph is written to ignored `data/coruna/site/wander-data.json`; crop descriptors are cached under `~/.local/state/typology-machine/wander-features`. Rebuilding does not rerun detection. The default cosine threshold is 0.65, with at most eight neighbours per mode and an aspect-ratio difference capped at 1.6×. Colour ranks only those visually eligible matches. SIFT/RANSAC fits are computed for the six visible alternatives per mode; crop padding is removed using the saved detection geometry. Fits require distributed inliers and modest transforms, with further cumulative limits in the viewer to prevent drift. Full street photos use the existing context service and decode on first access. The map and wall do not load experiment assets.
 
 ## Setup
 
