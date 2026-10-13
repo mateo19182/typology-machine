@@ -102,7 +102,11 @@ def clean_proposals(features):
             for other in kept:
                 intersection = area([max(box[0], other[0]), max(box[1], other[1]), min(box[2], other[2]), min(box[3], other[3])])
                 union = area(box) + area(other) - intersection
-                if union > 0 and intersection / union >= .65:
+                smaller, larger = sorted((area(box), area(other)))
+                # Catch both shifted boxes and near-contained alternative extents.
+                # Keep small nested objects: they can be separate real details.
+                if union > 0 and (intersection / union >= .45 or
+                                  (smaller > 0 and intersection / smaller >= .85 and smaller / larger >= .3)):
                     duplicate = True
                     break
             if not duplicate:
@@ -163,7 +167,7 @@ def build(site=SITE, state=STATE):
         fcntl.flock(lock, fcntl.LOCK_EX)
         files = [site / p for p in ('layers/manifest.json', 'data.json', 'barrios.geojson')]
         contents = [p.read_bytes() for p in files]
-        key = hashlib.sha256(b'query-schema-v4-quality\0' + b'\0'.join(contents)).hexdigest()[:24]
+        key = hashlib.sha256(b'query-schema-v5-overlap\0' + b'\0'.join(contents)).hexdigest()[:24]
         current = state / 'current.json'
         if current.exists() and json.loads(current.read_text())['query_snapshot'] == key:
             print('Query index unchanged', flush=True)

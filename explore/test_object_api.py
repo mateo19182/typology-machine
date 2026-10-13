@@ -83,6 +83,8 @@ class ObjectAPITest(unittest.TestCase):
                                        bx=box, score=score, width=100, height=100, **extra)}
         rows = [f('best', [0, 0, .5, .5], .9), f('larger', [0, 0, .55, .55]),
                 f('adjacent', [.5, 0, 1, .5]),
+                f('shifted', [.15, 0, .65, .5]),
+                f('contained', [.05, .05, .35, .35]),
                 f('nested-sign', [0, 0, .2, .2], .7),
                 f('tiny', [.8, .8, 1, 1], object_width=12, object_height=100)]
         other_category = f('graffiti', [0, 0, .5, .5]); other_category['properties']['category'] = 'graffiti'

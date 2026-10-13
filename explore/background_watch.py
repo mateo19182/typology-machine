@@ -44,7 +44,7 @@ def check():
     units = ['typology-' + name for name in (
         'site.service', 'object-api.service', 'proposal-context.service', 'storage-migration.service',
         'r2-crops.service', 'ocr.service', 'layer-refresh.service', 'followup.service',
-        'backfill.service', 'dedupe-followup.service', 'layer-refresh.timer', 'followup.timer', 'ocr.timer', 'r2-crops.timer')]
+        'backfill.service', 'dedupe-followup.service', 'expanded-dedupe.service', 'expanded-dedupe.timer', 'layer-refresh.timer', 'followup.timer', 'ocr.timer', 'r2-crops.timer')]
     result = subprocess.run(['systemctl', '--user', 'show', *units, '-p', 'Id', '-p', 'ActiveState', '-p', 'Result'],
                             check=True, capture_output=True, text=True, timeout=20)
     services = {}
@@ -53,6 +53,8 @@ def check():
         services[row.pop('Id')] = row
     report['services'] = services
     for name, row in services.items():
+        if name == 'typology-expanded-dedupe.service' and row.get('Result') == 'exec-condition':
+            continue  # Waiting for verified storage migration completion.
         if row.get('ActiveState') == 'failed' or row.get('Result', 'success') != 'success':
             alerts.append(name + ': ' + str(row))
     for name in ('site', 'object-api'):
@@ -98,6 +100,7 @@ def check():
         ocr = ROOT / 'data/coruna/apple/multicategory' / plan['apple_run'] / 'ocr.jsonl'
         progress('ocr', ocr.stat().st_size if ocr.exists() else 0,
                  services['typology-ocr.service']['ActiveState'] in ('active', 'activating'))
+    report['expanded_dedupe'] = {source: read_json(ROOT / f'data/coruna/{source}/multicategory_dedupe/expanded_20261013/summary.json') for source in ('apple', 'gsv')}
     report['crop_delivery'] = read_json(ROOT / 'data/coruna/site/crop-storage.json')
     urls = ['http://127.0.0.1:8790/api/meta']
     if public := os.environ.get('TYPOLOGY_PUBLIC_URL'):

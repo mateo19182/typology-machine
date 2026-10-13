@@ -4,9 +4,25 @@ import tempfile
 import unittest
 
 from export_layers import asset_url, export
+from map_groups import load_groups
 
 
 class LayerExportTest(unittest.TestCase):
+    def test_expanded_groups_preserve_existing_membership(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            for name, groups in [('pilot_v3', [('old', ['a', 'b'])]),
+                                 ('expanded_20261013', [('overlap', ['b', 'c']), ('new', ['d', 'e'])])]:
+                folder = base / 'apple/multicategory_dedupe' / name
+                folder.mkdir(parents=True)
+                (folder / 'config.json').write_text(json.dumps({'run_id': 'run', 'policy': {'context_geometry': True}}))
+                (folder / 'groups.jsonl').write_text(''.join(json.dumps(dict(id=key, members=members, rep=members[0], category='graffiti'))+'\n' for key, members in groups))
+            membership, sources = load_groups(base, 'run', 'apple')
+            self.assertEqual(set(membership), {'a', 'b', 'd', 'e'})
+            self.assertEqual(membership['a']['duplicate_group'], membership['b']['duplicate_group'])
+            self.assertNotEqual(membership['a']['duplicate_group'], membership['d']['duplicate_group'])
+            self.assertEqual(load_groups(base, 'other-run', 'apple')[0], {})
+
     def test_snapshot_keeps_multiple_objects_and_duplicate_flags_without_exposing_run(self):
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp) / 'city'

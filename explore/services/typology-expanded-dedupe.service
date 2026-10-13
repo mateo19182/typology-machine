@@ -1,0 +1,17 @@
+[Unit]
+Description=Expand verified cross-view duplicate groups after storage migration
+ConditionPathExists=!%h/.local/state/typology-machine/expanded-dedupe.complete
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/projects/typology-machine
+EnvironmentFile=-%h/.config/typology-machine/deployment.env
+Environment=OPENBLAS_NUM_THREADS=1
+Environment=OMP_NUM_THREADS=1
+ExecCondition=/usr/bin/python3 -c "import json,pathlib,sys; p=pathlib.Path.home()/'.local/state/typology-machine/storage-migration.json'; sys.exit(0 if p.exists() and json.loads(p.read_text()).get('stage')=='complete' else 1)"
+ExecStart=%h/projects/typology-machine/.venv/bin/python -u explore/multicategory_dedupe.py --run data/coruna/apple/multicategory/765844a02f75 --out data/coruna/apple/multicategory_dedupe/expanded_20261013 --categories store_sign,graffiti,street_name_plate --limit 5000 --workers 2 --min-inlier-ratio .65 --min-coverage .2 --context-check
+ExecStart=%h/projects/typology-machine/.venv/bin/python -u explore/multicategory_dedupe.py --run data/coruna/gsv/multicategory/9d984d64aa7e --out data/coruna/gsv/multicategory_dedupe/expanded_20261013 --categories store_sign,graffiti,street_name_plate --limit 5000 --workers 2 --min-inlier-ratio .65 --min-coverage .2 --context-check
+ExecStartPost=/usr/bin/touch %h/.local/state/typology-machine/expanded-dedupe.complete
+Nice=15
+IOSchedulingClass=idle
+TimeoutStartSec=infinity
