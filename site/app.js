@@ -26,7 +26,7 @@
     'Reload the page to retry.':'Recarga la página para reintentar.',
     'Some selected layers failed to load. Retry before downloading.':'Algunas capas no se cargaron. Reinténtalo antes de descargar.'
   });
-  Object.assign(translations, {'Show on map':'Ver en mapa','Filters':'Filtros','Categories':'Categorías','Date and source':'Fecha y fuente','Display options':'Opciones de visualización','From':'Desde','To':'Hasta','Close filters':'Cerrar filtros','Shuffle wall':'Mezclar galería','Copy link':'Copiar enlace','Capture date known':'Fecha de captura conocida','All dates':'Todas las fechas','No categories':'Sin categorías'});
+  Object.assign(translations, {'Minimum confidence':'Confianza mínima','Show on map':'Ver en mapa','Filters':'Filtros','Categories':'Categorías','Date and source':'Fecha y fuente','Display options':'Opciones de visualización','From':'Desde','To':'Hasta','Close filters':'Cerrar filtros','Shuffle wall':'Mezclar galería','Copy link':'Copiar enlace','Capture date known':'Fecha de captura conocida','All dates':'Todas las fechas','No categories':'Sin categorías'});
   const t=value=>language==='es'?(translations[value]||value):value;
   document.documentElement.lang=language;
   // Translate interface nodes only; detected text and provider metadata stay original.
@@ -68,7 +68,7 @@
   }
   function currentFilters(){return {
     categories:[...enabled].sort(),query:$('object-search').value.trim(),barrio:$('barrio-filter').value,
-    source:$('source-filter').value,from:$('year-from').value,to:$('year-to').value,
+    confidence:$('confidence-filter').value,source:$('source-filter').value,from:$('year-from').value,to:$('year-to').value,
     unknown:$('date-unknown').checked,grouped:grouped(),area:$('area-filter').checked,
     cluster:$('cluster-filter').value
   };}
@@ -81,7 +81,7 @@
   function queryParams(){
     const f=currentFilters(),view=mapViewport();
     const params=new URLSearchParams({snapshot:manifest.query_snapshot,layers:f.categories.join(','),q:f.query,
-      barrio:f.barrio,source:f.source,from:f.from,to:f.to,unknown:f.unknown?'1':'0',group:f.grouped?'1':'0',
+      confidence:f.confidence,barrio:f.barrio,source:f.source,from:f.from,to:f.to,unknown:f.unknown?'1':'0',group:f.grouped?'1':'0',
       area:f.area?'1':'0',cluster:f.cluster,colors:$('cluster-colors').checked?'1':'0',
       view:document.body.dataset.view,map:document.body.dataset.view==='map'?'1':'0',cols:view.cols,rows:view.rows,limit:48,seed:shuffleSeed});
     params.set('bbox',view.bbox);
@@ -94,7 +94,7 @@
     $('count').textContent=`${total.toLocaleString()} ${grouped()?t('items'):t('observations')}${busy?' · '+t('loading…'):''}`;
     $('layer-summary').textContent=`${t('Filters')} · ${enabled.size}`;
     const f=currentFilters(), names=[...enabled].map(id=>t(categories.get(id)?.label||id));
-    const summary=[names.join(', ')||t('No categories'),f.query?`“${f.query}”`:null,barrios.find(b=>b.id===f.barrio)?.name||(f.barrio==='outside'?t('Outside mapped barrios'):null),f.source?$('source-filter').selectedOptions[0].textContent:null,f.from!==$('year-from').min||f.to!==$('year-to').max?`${f.from}–${f.to}`:null,!f.unknown?t('Capture date known'):null,f.area?t('Only this map area'):null,!f.grouped?t('observations'):null].filter(Boolean).join(' · ');
+    const summary=[`${t('Minimum confidence')} ${f.confidence}`,names.join(', ')||t('No categories'),f.query?`“${f.query}”`:null,barrios.find(b=>b.id===f.barrio)?.name||(f.barrio==='outside'?t('Outside mapped barrios'):null),f.source?$('source-filter').selectedOptions[0].textContent:null,f.from!==$('year-from').min||f.to!==$('year-to').max?`${f.from}–${f.to}`:null,!f.unknown?t('Capture date known'):null,f.area?t('Only this map area'):null,!f.grouped?t('observations'):null].filter(Boolean).join(' · ');
     $('filter-summary').textContent=summary;$('filter-summary').title=summary;
     $('cluster-controls').hidden=!enabled.has('store_sign')||!clusters.size;
     $('focus-results').disabled=busy||!total||queryError;
@@ -237,7 +237,7 @@
     const f=currentFilters(),center=map.getCenter(),params=new URLSearchParams();
     params.set('lat',center.lat.toFixed(6));params.set('lon',center.lng.toFixed(6));params.set('z',map.getZoom());
     params.set('layers',f.categories.join(','));params.set('view',document.body.dataset.view);
-    params.set('from',f.from);params.set('to',f.to);params.set('group',f.grouped?'1':'0');
+    params.set('confidence',f.confidence);params.set('from',f.from);params.set('to',f.to);params.set('group',f.grouped?'1':'0');
     if(shuffleSeed)params.set('seed',shuffleSeed);
     if(f.query)params.set('q',f.query);if(f.barrio)params.set('barrio',f.barrio);if(f.source)params.set('source',f.source);
     if(!f.unknown)params.set('unknown','0');if(f.area)params.set('area','1');if(f.cluster)params.set('cluster',f.cluster);
@@ -256,6 +256,7 @@
     const p=new URLSearchParams(location.hash.slice(1));
     close(false);
     shuffleSeed=Math.max(0,Math.min(2147483646,parseInt(p.get('seed'),10)||0));
+    $('confidence-filter').value=['0.5','0.65','0.75','0.85'].includes(p.get('confidence'))?p.get('confidence'):'0.65';
     $('object-search').value=p.get('q')||'';
     $('barrio-filter').value=p.get('barrio')||'';$('source-filter').value=p.get('source')||'';
     $('area-filter').checked=p.get('area')==='1';$('group-duplicates').checked=p.get('group')!=='0';
@@ -344,7 +345,7 @@
     }
   });
   function changeFilters(){close(false);updateSelection();saveState(true);}
-  for(const id of ['source-filter','area-filter','group-duplicates','date-unknown','cluster-filter'])$(id).onchange=changeFilters;
+  for(const id of ['confidence-filter','source-filter','area-filter','group-duplicates','date-unknown','cluster-filter'])$(id).onchange=changeFilters;
   $('barrio-filter').onchange=()=>{drawBarrio(true);changeFilters();};
   $('cluster-colors').onchange=()=>{refreshVisible();saveState();};
   let yearTimer;
@@ -355,7 +356,7 @@
     enabled.clear();for(const id of ['graffiti','street_name_plate'])if(categories.has(id))enabled.add(id);
     document.querySelectorAll('[data-category]').forEach(input=>input.checked=enabled.has(input.dataset.category));
     $('group-duplicates').checked=true;$('cluster-colors').checked=false;shuffleSeed=0;
-    $('object-search').value='';$('barrio-filter').value='';$('source-filter').value='';$('area-filter').checked=false;$('date-unknown').checked=true;
+    $('confidence-filter').value='0.65';$('object-search').value='';$('barrio-filter').value='';$('source-filter').value='';$('area-filter').checked=false;$('date-unknown').checked=true;
     $('year-from').value=$('year-from').min;$('year-to').value=$('year-to').max;$('cluster-filter').value='';yearLabels();drawBarrio();changeFilters();
   };
   $('layers-all').onclick=()=>{for(const id of categories.keys())enabled.add(id);document.querySelectorAll('[data-category]').forEach(input=>input.checked=true);changeFilters();};

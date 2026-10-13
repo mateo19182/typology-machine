@@ -24,3 +24,9 @@ Object labels and OCR can be wrong. Locations often represent the camera rather
 than the exact object. Duplicate groups are proposals until reviewed. People and
 pets are detection categories; the current deduplication workflow excludes them
 from identity matching.
+
+## Viewer quality filters
+
+Map, wall, object details and downloads use a minimum detection confidence of 0.65 by default. The filter offers 0.50, 0.65, 0.75 and 0.85 and travels with shared links. Detector scores are not calibrated category accuracy.
+
+The query index excludes proposals with a short side below 24 pixels or area below 1,024 pixels. It uses object dimensions when available, otherwise the exported crop dimensions. Within the same source image and category, boxes with intersection-over-union of at least 0.65 are suppressed in descending confidence order; larger area breaks confidence ties. Different categories and viewpoints are preserved. Original detections and images remain untouched; selecting 0.50 restores lower-confidence candidates, but not size/overlap exclusions. No blur classifier or category verification is applied.

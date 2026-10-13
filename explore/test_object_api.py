@@ -10,7 +10,7 @@ from urllib.parse import urlencode
 from urllib.request import urlopen
 from http.server import ThreadingHTTPServer
 
-from object_api import API, build, csv_cell, year
+from object_api import API, build, clean_proposals, csv_cell, year
 
 
 class ObjectAPITest(unittest.TestCase):
@@ -35,7 +35,7 @@ class ObjectAPITest(unittest.TestCase):
                 'crop': '/proposal-assets/' + identity + '.jpg', 'raw': '/proposal-context/' + identity,
                 'score': .8, 'text': '', **props}}
         rows = [feature('a', duplicate_group='group-ab', group_rep='a', text='Rúa Café'),
-                feature('b', duplicate_group='group-ab', group_rep='a', source='gsv', date='2020-02', text='Farmacia', lon=3),
+                feature('b', score=.9, duplicate_group='group-ab', group_rep='a', source='gsv', date='2020-02', text='Farmacia', lon=3),
                 feature('dup', duplicate_of='a'), feature('unknown', date='2020-02-30')]
         rows += [feature(f'single-{i:03}', text='Shop') for i in range(65)]
         (layers / 'store_sign.geojson').write_text(json.dumps({'type': 'FeatureCollection', 'features': rows}))
@@ -57,10 +57,39 @@ class ObjectAPITest(unittest.TestCase):
         cls.temp.cleanup()
 
     def request(self, route='query', **params):
-        params = {'layers': 'store_sign', **params}
+        params = {'layers': 'store_sign', 'confidence': .5, **params}
         with urlopen(self.origin + '/api/' + route + '?' + urlencode(params)) as response:
             body = response.read().decode('utf-8-sig')
         return json.loads(body) if route != 'export' or params.get('format') in ('geojson', 'manifest') else body
+
+    def test_confidence_applies_to_counts_details_and_exports(self):
+        self.assertEqual(self.request(confidence=.65)['total'], 67)
+        self.assertEqual(self.request(confidence=.95)['total'], 0)
+        self.assertEqual(self.request('export', format='manifest', confidence=.95)['record_count'], 0)
+        self.assertEqual(self.request('object', id='group-ab', confidence=.85)['id'], 'b')
+        self.assertEqual(self.request(confidence=.85)['total'], 1)
+        self.assertEqual(self.request('export', format='geojson', confidence=.85)['features'][0]['properties']['member_ids'], ['b'])
+        for value in ['nan', '.49', '1.1']:
+            with self.assertRaises(HTTPError) as error:
+                self.request(confidence=value)
+            self.assertEqual(error.exception.code, 400)
+        with self.assertRaises(HTTPError) as error:
+            self.request('object', id='legacy-only', confidence=.65)
+        self.assertEqual(error.exception.code, 404)
+
+    def test_light_size_and_overlap_filter(self):
+        def f(identity, box, score=.8, **extra):
+            return {'properties': dict(id=identity, source='apple', view_id='one', category='door',
+                                       bx=box, score=score, width=100, height=100, **extra)}
+        rows = [f('best', [0, 0, .5, .5], .9), f('larger', [0, 0, .55, .55]),
+                f('adjacent', [.5, 0, 1, .5]),
+                f('nested-sign', [0, 0, .2, .2], .7),
+                f('tiny', [.8, .8, 1, 1], object_width=12, object_height=100)]
+        other_category = f('graffiti', [0, 0, .5, .5]); other_category['properties']['category'] = 'graffiti'
+        other_view = f('other-view', [0, 0, .5, .5]); other_view['properties']['view_id'] = 'two'
+        rows.extend([other_category, other_view])
+        self.assertEqual({r['properties']['id'] for r in clean_proposals(rows)},
+                         {'best', 'adjacent', 'nested-sign', 'graffiti', 'other-view'})
 
     def test_page_counts_and_no_duplicate_observations(self):
         first = self.request(bbox='0,0,4,2', cols=1, rows=1)

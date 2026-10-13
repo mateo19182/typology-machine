@@ -132,6 +132,7 @@ body[data-view="map"] #shuffle { display:none; }body[data-view="map"] #focus-res
         <label for="barrio-filter">Barrio</label><select id="barrio-filter" disabled><option value="">All barrios</option></select>
         <span id="barrio-status" role="status"></span>
       </div>
+      <div class="layer-search"><label for="confidence-filter">Minimum confidence</label><select id="confidence-filter"><option value="0.5">0.50</option><option value="0.65" selected>0.65</option><option value="0.75">0.75</option><option value="0.85">0.85</option></select></div>
       <div class="layer-heading"><span>Categories</span><button id="layers-all">Select all</button><button id="layers-none">Clear all</button></div>
       <div id="layer-options"></div>
       <details class="filter-section"><summary>Date and source</summary>
@@ -204,6 +205,6 @@ body[data-view="map"] #shuffle { display:none; }body[data-view="map"] #focus-res
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="crop-storage.js"></script>
-<script src="app.js?v=b26a98a6891e"></script>
+<script src="app.js?v=fc76c24911c7"></script>
 </body>
 </html>

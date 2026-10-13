@@ -76,6 +76,40 @@ def legacy_rows(data):
     } for s in data['signs']}
 
 
+def clean_proposals(features):
+    """Light size gate and same-view, same-category NMS; originals remain intact."""
+    views = {}
+    for feature in features:
+        p = feature['properties']
+        if p.get('duplicate_of'):
+            continue
+        w, h = p.get('object_width', p['width']), p.get('object_height', p['height'])
+        if min(w, h) < 24 or w * h < 1024:
+            continue
+        key = (p.get('source'), p.get('view_id'), p.get('category'))
+        # Older exports without view geometry cannot be safely compared.
+        if not p.get('view_id') or not p.get('bx'):
+            yield feature
+            continue
+        views.setdefault(key, []).append(feature)
+    def area(b):
+        return max(0, b[2]-b[0]) * max(0, b[3]-b[1])
+    for candidates in views.values():
+        kept = []
+        for feature in sorted(candidates, key=lambda f: (-f['properties']['score'], -area(f['properties']['bx']), f['properties']['id'])):
+            box = feature['properties']['bx']
+            duplicate = False
+            for other in kept:
+                intersection = area([max(box[0], other[0]), max(box[1], other[1]), min(box[2], other[2]), min(box[3], other[3])])
+                union = area(box) + area(other) - intersection
+                if union > 0 and intersection / union >= .65:
+                    duplicate = True
+                    break
+            if not duplicate:
+                kept.append(box)
+                yield feature
+
+
 def published_rows(site, manifest, legacy):
     remaining = legacy_rows(legacy)
     for category in manifest['categories']:
@@ -83,12 +117,14 @@ def published_rows(site, manifest, legacy):
         if not path.is_relative_to((site / 'layers').resolve()):
             raise ValueError('Invalid published layer path')
         print('Indexing', category['id'], flush=True)
-        for feature in json.loads(path.read_text())['features']:
+        features = json.loads(path.read_text())['features']
+        legacy_matches = {f['properties']['id']: remaining.pop(f['properties']['id'], {}) for f in features}
+        for feature in clean_proposals(features):
             p = feature['properties']
             if p.get('duplicate_of'):
                 continue
             lon, lat = feature['geometry']['coordinates']
-            row = {**remaining.pop(p['id'], {}), **p, 'category': category['id'], 'la': lat, 'lo': lon,
+            row = {**legacy_matches.get(p['id'], {}), **p, 'category': category['id'], 'la': lat, 'lo': lon,
                    'w': p['width'], 'h': p['height'], 'd': p['date'], 'u': p.get('provider_url'),
                    'src': 'g' if p['source'] == 'gsv' else 'a', 'proposal': True,
                    'snapshot_id': manifest['snapshot_id']}
@@ -100,7 +136,7 @@ SCHEMA = '''
 CREATE TABLE observations (
  id TEXT UNIQUE NOT NULL, group_key TEXT NOT NULL, category TEXT NOT NULL,
  source TEXT NOT NULL, year INTEGER, barrio TEXT, lon REAL, lat REAL, my REAL,
- preferred INTEGER, quality REAL, legacy INTEGER, cluster TEXT, color TEXT,
+ preferred INTEGER, quality REAL, score REAL, legacy INTEGER, cluster TEXT, color TEXT,
  search TEXT, nviews INTEGER DEFAULT 1
 );
 CREATE TABLE records (id TEXT PRIMARY KEY, payload TEXT NOT NULL);
@@ -127,7 +163,7 @@ def build(site=SITE, state=STATE):
         fcntl.flock(lock, fcntl.LOCK_EX)
         files = [site / p for p in ('layers/manifest.json', 'data.json', 'barrios.geojson')]
         contents = [p.read_bytes() for p in files]
-        key = hashlib.sha256(b'query-schema-v3\0' + b'\0'.join(contents)).hexdigest()[:24]
+        key = hashlib.sha256(b'query-schema-v4-quality\0' + b'\0'.join(contents)).hexdigest()[:24]
         current = state / 'current.json'
         if current.exists() and json.loads(current.read_text())['query_snapshot'] == key:
             print('Query index unchanged', flush=True)
@@ -145,21 +181,21 @@ def build(site=SITE, state=STATE):
                 search = normalize(' '.join(str(row.get(k) or '') for k in ('text', 't', 'b', 'st', 'barrio')))
                 weight = (row.get('score') or 0)*math.sqrt(max(1, (row.get('w') or 1)*(row.get('h') or 1)))
                 db.execute('INSERT INTO records VALUES (?,?)', (row['id'], encode(row)))
-                db.execute('INSERT INTO observations VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)', (
+                db.execute('INSERT INTO observations VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)', (
                     row['id'], row.get('duplicate_group') or row['id'], row['category'], row['source'], year(row.get('d')),
                     row['barrio_id'], row['lo'], row['la'], mercator(row['la']), int(row['id'] != row.get('group_rep')),
-                    weight, int(bool(row.get('legacy_record'))), row.get('cluster_id'), row.get('cluster_color'), search))
+                    weight, row.get('score', 0), int(bool(row.get('legacy_record'))), row.get('cluster_id'), row.get('cluster_color'), search))
             db.executescript('''
                 INSERT INTO obs_geo SELECT rowid,lon,lon,lat,lat FROM observations;
                 INSERT INTO obs_fts(obs_fts) VALUES ('rebuild');
                 CREATE TABLE objects AS
-                  SELECT id,group_key,category,source,year,barrio,lon,lat,my,preferred,quality,legacy,cluster,color,search,n
+                  SELECT id,group_key,category,source,year,barrio,lon,lat,my,preferred,quality,score,legacy,cluster,color,search,n
                   FROM (SELECT *,row_number() OVER(PARTITION BY group_key ORDER BY preferred,quality DESC,id) AS rank,
-                        count(*) OVER(PARTITION BY group_key) AS n FROM observations) WHERE rank=1;
+                        count(*) OVER(PARTITION BY group_key) AS n FROM observations WHERE score>=.65) WHERE rank=1;
                 ALTER TABLE objects RENAME COLUMN n TO nviews;
                 CREATE UNIQUE INDEX object_group ON objects(group_key);
                 CREATE INDEX object_category ON objects(category,id);
-                UPDATE objects SET search=(SELECT group_concat(search,' ') FROM observations WHERE observations.group_key=objects.group_key)
+                UPDATE objects SET search=(SELECT group_concat(search,' ') FROM observations WHERE observations.group_key=objects.group_key AND observations.score>=.65)
                   WHERE nviews>1;
                 CREATE VIRTUAL TABLE object_geo USING rtree(rowid,west,east,south,north);
                 INSERT INTO object_geo SELECT rowid,lon,lon,lat,lat FROM objects;
@@ -212,10 +248,13 @@ def filters(params, meta):
     lo, hi = int(params.get('from', 1900)), int(params.get('to', 2100))
     if not 1900 <= lo <= hi <= 2100:
         raise ValueError('Invalid capture year range')
+    confidence = float(params.get('confidence', '.65'))
+    if not math.isfinite(confidence) or not .5 <= confidence <= 1:
+        raise ValueError('Confidence must be between 0.5 and 1')
     query = normalize(params.get('q', '').strip())
     if len(query) > 200:
         raise ValueError('Search is too long')
-    return {'categories': sorted(set(categories)), 'source': source, 'from': lo, 'to': hi,
+    return {'confidence': confidence, 'categories': sorted(set(categories)), 'source': source, 'from': lo, 'to': hi,
             'unknown': params.get('unknown', '1') != '0', 'grouped': params.get('group', '1') != '0',
             'all_dates': lo <= meta['min_year'] and hi >= meta['max_year'],
             'barrio': params.get('barrio', ''), 'cluster': params.get('cluster', ''), 'query': query}
@@ -224,6 +263,7 @@ def filters(params, meta):
 def observation_where(f):
     clauses = ['category IN (' + ','.join('?' for _ in f['categories']) + ')']
     args = list(f['categories'])
+    clauses.append('score>=?'); args.append(f['confidence'])
     if f['source']:
         clauses.append('source=?'); args.append(f['source'])
     clauses.append('(year BETWEEN ? AND ?' + (' OR year IS NULL)' if f['unknown'] else ')'))
@@ -243,7 +283,7 @@ def selection_sql(f, box=None):
     where, args = observation_where(f)
     # Groups spanning only one source/year/barrio still use the fast path when
     # no observation-level filter can remove a viewpoint.
-    default = not f['source'] and not f['barrio'] and not f['cluster'] and f['unknown'] and f['all_dates']
+    default = f['confidence'] == .65 and not f['source'] and not f['barrio'] and not f['cluster'] and f['unknown'] and f['all_dates']
     if not f['grouped'] or default:
         table = 'objects' if f['grouped'] else 'observations'
         index = 'object' if f['grouped'] else 'obs'
@@ -406,6 +446,10 @@ class API:
         if not re.fullmatch('[a-f0-9]{24}', key):
             raise ValueError('Invalid query snapshot')
         path = self.state / (key + '.sqlite3')
+        if path.exists():
+            with sqlite3.connect(path.as_uri() + '?mode=ro', uri=True) as db:
+                if 'score' not in {r[1] for r in db.execute('PRAGMA table_info(observations)')}:
+                    raise FileNotFoundError('Snapshot expired; update the page')
         if not path.exists():
             raise FileNotFoundError('Snapshot expired; update the page')
         return path
