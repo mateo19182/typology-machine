@@ -1,0 +1,17 @@
+[Unit]
+Description=Typology graffiti generation API
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/projects/typology-machine
+EnvironmentFile=-%h/.config/typology-machine/graffiti.env
+ExecStart=/mnt/data/projects/typology-machine/graffiti-ai/venv/bin/python explore/graffiti_api.py
+Restart=on-failure
+RestartSec=5
+Nice=10
+Environment=OMP_NUM_THREADS=2
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target

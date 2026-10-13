@@ -43,7 +43,7 @@ def check():
     alerts = report['alerts']
     units = ['typology-' + name for name in (
         'site.service', 'object-api.service', 'proposal-context.service', 'storage-migration.service',
-        'r2-crops.service', 'ocr.service', 'layer-refresh.service', 'followup.service',
+        'r2-crops.service', 'ocr.service', 'graffiti.service', 'layer-refresh.service', 'followup.service',
         'backfill.service', 'dedupe-followup.service', 'expanded-dedupe.service', 'expanded-dedupe.timer', 'layer-refresh.timer', 'followup.timer', 'ocr.timer', 'r2-crops.timer')]
     result = subprocess.run(['systemctl', '--user', 'show', *units, '-p', 'Id', '-p', 'ActiveState', '-p', 'Result'],
                             check=True, capture_output=True, text=True, timeout=20)
@@ -101,6 +101,11 @@ def check():
         progress('ocr', ocr.stat().st_size if ocr.exists() else 0,
                  services['typology-ocr.service']['ActiveState'] in ('active', 'activating'))
     report['expanded_dedupe'] = {source: read_json(ROOT / f'data/coruna/{source}/multicategory_dedupe/expanded_20261013/summary.json') for source in ('apple', 'gsv')}
+    graffiti_home = Path(os.environ.get('TYPOLOGY_GRAFFITI_HOME', '/mnt/data/projects/typology-machine/graffiti-ai'))
+    training = read_json(graffiti_home / 'training.json')
+    report['graffiti_training'] = {key: training[key] for key in ('stage', 'step', 'steps', 'train_count', 'validation_count') if key in training}
+    if training.get('stage') == 'failed':
+        alerts.append('Graffiti training failed; inspect its service log')
     report['crop_delivery'] = read_json(ROOT / 'data/coruna/site/crop-storage.json')
     urls = ['http://127.0.0.1:8790/api/meta']
     if public := os.environ.get('TYPOLOGY_PUBLIC_URL'):

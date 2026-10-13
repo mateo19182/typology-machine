@@ -26,7 +26,7 @@
     'Reload the page to retry.':'Recarga la página para reintentar.',
     'Some selected layers failed to load. Retry before downloading.':'Algunas capas no se cargaron. Reinténtalo antes de descargar.'
   });
-  Object.assign(translations, {'Minimum confidence':'Confianza mínima','Show on map':'Ver en mapa','Filters':'Filtros','Categories':'Categorías','Date and source':'Fecha y fuente','Display options':'Opciones de visualización','From':'Desde','To':'Hasta','Close filters':'Cerrar filtros','Shuffle wall':'Mezclar galería','Copy link':'Copiar enlace','Capture date known':'Fecha de captura conocida','All dates':'Todas las fechas','No categories':'Sin categorías'});
+  Object.assign(translations, {'Experiments':'Experimentos','Minimum confidence':'Confianza mínima','Show on map':'Ver en mapa','Filters':'Filtros','Categories':'Categorías','Date and source':'Fecha y fuente','Display options':'Opciones de visualización','From':'Desde','To':'Hasta','Close filters':'Cerrar filtros','Shuffle wall':'Mezclar galería','Copy link':'Copiar enlace','Capture date known':'Fecha de captura conocida','All dates':'Todas las fechas','No categories':'Sin categorías'});
   const t=value=>language==='es'?(translations[value]||value):value;
   document.documentElement.lang=language;
   // Translate interface nodes only; detected text and provider metadata stay original.

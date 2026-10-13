@@ -1,0 +1,4 @@
+# Install into an isolated environment with the project's torch/transformers dependencies.
+# Weights use the pinned revision in graffiti_model.py and live outside Git.
+diffusers==0.41.0
+peft==0.21.2

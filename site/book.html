@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Living typology book · Typology Machine</title><link rel="icon" href="favicon.svg?v=2" type="image/svg+xml"><link rel="stylesheet" href="book.css?v=67ff83b0c44e"></head>
+<body>
+<header><a href="experiments.html">← Experiments</a><span>Typology Machine / A Coruña</span></header>
+<main>
+<section class="controls" aria-labelledby="heading">
+<p class="eyebrow">A collection you can hold</p><h1 id="heading">Living typology book</h1><p>Choose a subject. Compose pages from the city’s photographed objects, then print or save a PDF.</p>
+<form id="settings">
+<label class="wide">Book title<input id="title" value="A Coruña, collected" maxlength="90"></label>
+<label>Category<select id="category" required disabled><option>Loading categories…</option></select></label>
+<label>Words or lettering<input id="query" placeholder="Optional search" maxlength="120"></label>
+<label>Confidence<select id="confidence"><option value="0.65">0.65</option><option value="0.75">0.75</option><option value="0.85">0.85</option></select></label>
+<label>Image source<select id="source"><option value="">All sources</option><option value="apple">Apple</option><option value="gsv">Google Street View</option></select></label>
+<label>Neighbourhood<select id="barrio"><option value="">All neighbourhoods</option></select></label>
+<label>Objects per page<select id="density"><option value="6">6 · generous</option><option value="12" selected>12 · balanced</option><option value="20">20 · compact</option></select></label>
+<label>Pages<select id="pages"><option>1</option><option selected>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select></label>
+<div class="actions wide"><button id="compose" type="submit" disabled>Compose book</button><button id="shuffle" type="button" disabled>Shuffle</button><button id="print" type="button" disabled>Print / save PDF</button></div>
+</form>
+<p id="status" role="status" aria-live="polite">Loading collection…</p>
+<p class="note">A4 portrait. Choose “Save as PDF” in your browser’s print dialog and turn off browser headers and footers. Captions link to the original object. Categories and duplicate groups are machine proposals; some mistakes remain.</p>
+</section>
+<section id="book" aria-label="Book preview"></section>
+</main><script src="crop-storage.js"></script><script src="book.js?v=5983f5d38fc1"></script>
+</body></html>
