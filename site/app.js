@@ -23,6 +23,7 @@
     'rows':'filas','Preparing download…':'Preparando descarga…','Download ready':'Descarga preparada',
     'Bounds: Concello da Coruña':'Límites: Concello da Coruña','Clear selection':'Quitar selección',
     'Record details':'Detalles del registro','records, with matching viewpoints':'registros, con sus vistas coincidentes',
+    'Reload the page to retry.':'Recarga la página para reintentar.',
     'Some selected layers failed to load. Retry before downloading.':'Algunas capas no se cargaron. Reinténtalo antes de descargar.'
   });
   const t=value=>language==='es'?(translations[value]||value):value;
@@ -37,15 +38,15 @@
   $('d-map').textContent=t('map');
   $('language').textContent=language==='es'?'EN':'ES';$('language').onclick=()=>{try{localStorage.setItem('typology-language',language==='es'?'en':'es');}catch(error){}location.reload();};
   if (matchMedia('(max-width:600px)').matches) $('object-layers').open=false;
-  let map, active=[], order=[], browse=[], shown=0, curSign, curObject, full=false;
-  let manifest=null, availableManifest=null, selectedId='', restoring=true, ready=false, refreshing=false, exporting=false;
-  let panelItems=[], panelShown=0, pointSelection=null, barrioLayer=null;
-  let barrioData=null, barrios=[], legacy={meta:{},signs:[]};
+  let map, order=[], browse=[], curSign, curObject, full=false;
+  let manifest=null, availableManifest=null, selectedId='', restoring=true, ready=false, refreshing=false;
+  let panelItems=[], pointSelection=null, barrioLayer=null;
+  let serverCells=[], result=null, hasMore=false, pageBusy=false, queryBusy=false, queryError=false, shuffleSeed=0;
+  let queryController, queryGeneration=0, detailGeneration=0, viewport;
+  let barrios=[];
   let cropStorage=CropStorage.create();
-  const loaded=new Map(), enabled=new Set(), pending=new Map(), failed=new Set();
-  const filterCache=new WeakMap(), barrioCache=new Map();
+  const enabled=new Set();
   const categories=new Map(), clusters=new Map();
-  const normalize=value=>String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
   const grouped=()=>$('group-duplicates').checked;
   const label=row=>t(categories.get(row.category)?.label||row.category);
   const color=row=>$('cluster-colors').checked&&row.legacy_record?row.cluster_color||'#777':categories.get(row.category)?.color||'#ddd';
@@ -54,61 +55,15 @@
   const detail=$('detail');
   let returnFocus=null, statusTimer;
   function notice(message){$('action-status').textContent=message;clearTimeout(statusTimer);statusTimer=setTimeout(()=>$('action-status').textContent='',5000);}
-  async function fetchJSON(url){const response=await fetch(url);if(!response.ok)throw Error(`${url}: ${response.status}`);return response.json();}
+  async function fetchJSON(url,options){const response=await fetch(url,options);if(!response.ok)throw Error(`${url}: ${response.status}`);return response.json();}
 
-  // Polygon membership uses the same recorded position shown on the map. No nearest-name fallback.
-  function ringContains(ring,x,y){
-    let inside=false;
-    for(let i=0,j=ring.length-1;i<ring.length;j=i++){
-      const [ax,ay]=ring[j],[bx,by]=ring[i];
-      const cross=(x-ax)*(by-ay)-(y-ay)*(bx-ax);
-      if(Math.abs(cross)<1e-12&&x>=Math.min(ax,bx)&&x<=Math.max(ax,bx)&&y>=Math.min(ay,by)&&y<=Math.max(ay,by))return true;
-      if((ay>y)!==(by>y)&&x<(bx-ax)*(y-ay)/(by-ay)+ax)inside=!inside;
-    }
-    return inside;
-  }
-  function barrioFor(lon,lat){
-    if(!barrioData)return null;
-    const key=`${lon},${lat}`;
-    if(barrioCache.has(key))return barrioCache.get(key);
-    const match=barrios.find(b=>lon>=b.bounds[0]&&lon<=b.bounds[2]&&lat>=b.bounds[1]&&lat<=b.bounds[3]&&b.polygons.some(rings=>ringContains(rings[0],lon,lat)&&!rings.slice(1).some(ring=>ringContains(ring,lon,lat))));
-    const result=match?{id:match.id,name:match.name}:null;
-    barrioCache.set(key,result);return result;
-  }
+  // Boundaries are only used to draw the selected barrio. Membership is indexed on the server.
   function prepareBarrios(data){
-    barrioData=data;
-    barrios=data.features.map(feature=>{
-      const polygons=feature.geometry.type==='Polygon'?[feature.geometry.coordinates]:feature.geometry.coordinates;
-      const bounds=[Infinity,Infinity,-Infinity,-Infinity];
-      for(const polygon of polygons)for(const [x,y]of polygon[0]){bounds[0]=Math.min(bounds[0],x);bounds[1]=Math.min(bounds[1],y);bounds[2]=Math.max(bounds[2],x);bounds[3]=Math.max(bounds[3],y);}
-      return {id:String(feature.properties.id),name:feature.properties.name,feature,polygons,bounds};
-    }).sort((a,b)=>a.name.localeCompare(b.name,'gl'));
+    barrios=data.features.map(feature=>({id:String(feature.properties.id),name:feature.properties.name,feature})).sort((a,b)=>a.name.localeCompare(b.name,'gl'));
     for(const barrio of barrios){const option=document.createElement('option');option.value=barrio.id;option.textContent=barrio.name;$('barrio-filter').append(option);}
     const outside=document.createElement('option');outside.value='outside';outside.textContent=t('Outside mapped barrios');$('barrio-filter').append(outside);
     $('barrio-filter').disabled=false;
     const attribution=document.createElement('a');attribution.href=data.metadata.source;attribution.target='_blank';attribution.rel='noopener';attribution.textContent=t('Bounds: Concello da Coruña');$('barrio-status').replaceChildren(attribution);
-  }
-  function decorate(row){
-    const barrio=barrioFor(row.lo,row.la);
-    return {...row,barrio_id:barrio?.id||null,barrio:barrio?.name||null};
-  }
-  function groupObservations(rows){
-    const groups=new Map();
-    for(const row of rows){const id=row.duplicate_group||row.id;if(!groups.has(id))groups.set(id,[]);groups.get(id).push(row);}
-    return [...groups.entries()].map(([id,views])=>{
-      views.sort((a,b)=>Number(b.id===b.group_rep)-Number(a.id===a.group_rep)||(b.score||0)*Math.sqrt((b.w||1)*(b.h||1))-(a.score||0)*Math.sqrt((a.w||1)*(a.h||1))||a.id.localeCompare(b.id));
-      const texts=[...new Set(views.map(v=>(v.text||v.t||'').trim()).filter(Boolean))];
-      return {...views[0],object_id:id,views,search_text:texts.join('\n'),group_text:texts.join('\n')};
-    });
-  }
-  function captureInterval(value){
-    const match=String(value||'').match(/^(\d{4})-(\d{2})(?:-(\d{2})(?:T.*)?)?$/);
-    if(!match)return null;
-    const [,year,month,day]=match,y=Number(year),m=Number(month);
-    if(m<1||m>12)return null;
-    const last=new Date(Date.UTC(y,m,0)).getUTCDate();
-    if(day&&(Number(day)<1||Number(day)>last))return null;
-    return day?[`${year}-${month}-${day}`,`${year}-${month}-${day}`]:[`${year}-${month}-01`,`${year}-${month}-${last}`];
   }
   function currentFilters(){return {
     categories:[...enabled].sort(),query:$('object-search').value.trim(),barrio:$('barrio-filter').value,
@@ -116,82 +71,68 @@
     unknown:$('date-unknown').checked,grouped:grouped(),area:$('area-filter').checked,
     cluster:$('cluster-filter').value
   };}
-  function selectedRows(rows){
-    const filters=currentFilters(),key=JSON.stringify(filters);
-    let cached=filterCache.get(rows);
-    if(cached?.key===key)return cached.rows;
-    const filtered=rows.filter(row=>{
-      if(filters.source&&sourceOf(row)!==filters.source)return false;
-      if(filters.barrio&&(filters.barrio==='outside'?row.barrio_id!==null:row.barrio_id!==filters.barrio))return false;
-      const interval=captureInterval(row.d);
-      if(interval?(interval[1]<`${filters.from}-01-01`||interval[0]>`${filters.to}-12-31`):!filters.unknown)return false;
-      if(filters.cluster&&row.legacy_record&&(filters.cluster==='unassigned'?!!row.cluster_id:row.cluster_id!==filters.cluster))return false;
-      return true;
-    });
-    // Search across the retained viewpoints of a group, so a text match keeps its street context.
-    const items=grouped()?groupObservations(filtered):filtered;
-    const query=normalize(filters.query);
-    const result=query?items.filter(row=>normalize([row.search_text,row.text,row.t,row.b,row.st,row.barrio].filter(Boolean).join(' ')).includes(query)):items;
-    filterCache.set(rows,{key,rows:result});return result;
-  }
-  function inMap(row){return map.getBounds().contains([row.la,row.lo]);}
-  function selection(){return $('area-filter').checked?active.filter(inMap):active;}
-  function updateYears(){
-    const years=[];
-    for(const rows of loaded.values())for(const row of rows){const year=Number(String(row.d||'').slice(0,4));if(year>=1900&&year<=new Date().getFullYear())years.push(year);}
-    let min=Number($('year-from').min)||2012,max=Number($('year-to').max)||new Date().getFullYear();
-    for(const year of years){min=Math.min(min,year);max=Math.max(max,year);}
-    const wasMin=$('year-from').value===$('year-from').min,wasMax=$('year-to').value===$('year-to').max;
-    for(const id of ['year-from','year-to']){$(id).min=min;$(id).max=max;}
-    if(wasMin)$('year-from').value=min;if(wasMax)$('year-to').value=max;
-    yearLabels();
-  }
   function yearLabels(){$('year-from-value').textContent=$('year-from').value;$('year-to-value').textContent=$('year-to').value;}
-  function updateSelection(){
-    active=[...enabled].flatMap(id=>selectedRows(loaded.get(id)||[]));
-    for(const c of categories.values()){
-      const count=document.querySelector(`[data-category-count="${c.id}"]`),rows=loaded.get(c.id);
-      if(count&&!pending.has(c.id)){count.textContent=rows?selectedRows(rows).length.toLocaleString():(c.count||0).toLocaleString();count.title=rows?t('Selected objects'):t('Total in snapshot; enable layer to filter by capture date');}
-    }
-    pointSelection=null;
-    $('layer-summary').textContent=`${t('Object layers')} · ${enabled.size} ${t('on')}`;
+  function mapViewport(){
+    const b=map.getBounds(),size=map.getSize(),cell=map.getZoom()<17?18:10;
+    if(size.x&&size.y)viewport={bbox:[Math.max(-180,b.getWest()),Math.max(-85,b.getSouth()),Math.min(180,b.getEast()),Math.min(85,b.getNorth())].join(','),cols:Math.ceil(size.x/cell),rows:Math.ceil(size.y/cell)};
+    return viewport;
+  }
+  function queryParams(){
+    const f=currentFilters(),view=mapViewport();
+    const params=new URLSearchParams({snapshot:manifest.query_snapshot,layers:f.categories.join(','),q:f.query,
+      barrio:f.barrio,source:f.source,from:f.from,to:f.to,unknown:f.unknown?'1':'0',group:f.grouped?'1':'0',
+      area:f.area?'1':'0',cluster:f.cluster,colors:$('cluster-colors').checked?'1':'0',
+      view:document.body.dataset.view,map:document.body.dataset.view==='map'?'1':'0',cols:view.cols,rows:view.rows,limit:48,seed:shuffleSeed});
+    params.set('bbox',view.bbox);
+    if(pointSelection)params.set('list_bbox',pointSelection.bounds.join(','));
+    return params;
+  }
+  function updateSelection(snapshot){pointSelection=null;return refreshVisible(snapshot);}
+  function updateCounts(){
+    const busy=queryBusy||refreshing,total=result?.total||0;
+    $('count').textContent=`${total.toLocaleString()} ${grouped()?t('items'):t('observations')}${busy?' · '+t('loading…'):''}`;
+    $('layer-summary').textContent=`${t('Object layers')} · ${enabled.size} ${t('on')}${busy?' · '+t('loading…'):''}`;
     $('cluster-controls').hidden=!enabled.has('store_sign')||!clusters.size;
-    refreshVisible();if(map)observations.draw();saveState(true);
-  }
-  function refreshVisible(){
-    if(!map)return;
-    order=selection();
-    const busy=refreshing||[...enabled].some(id=>pending.has(id)||!loaded.has(id));
-    $('count').textContent=`${order.length.toLocaleString()} ${grouped()?t('items'):t('observations')}${busy?' · '+t('loading…'):''}`;
-    $('focus-results').disabled=!active.length;
-    const unavailable=[...enabled].some(id=>failed.has(id));
-    $('download-data').disabled=exporting||busy||unavailable||!order.length;
-    $('download-manifest').disabled=exporting||busy||unavailable||!order.length;
-    $('download-summary').textContent=unavailable?t('Some selected layers failed to load. Retry before downloading.'):busy?t('Loading selected layers…'):`${order.length.toLocaleString()} ${grouped()?t('Selected objects'):t('Selected observations')}`;
-    renderWall();renderPanel();
-  }
-  function parseLayer(c,data){
-    let rows=data.features.filter(f=>!f.properties.duplicate_of).map(f=>{
-      const p=f.properties;
-      return decorate({...p,category:c.id,la:f.geometry.coordinates[1],lo:f.geometry.coordinates[0],w:p.width,h:p.height,d:p.date,u:p.provider_url,src:p.source==='gsv'?'g':'a',proposal:true,run_id:p.run_id||p.raw?.split('/')[3]||null,snapshot_id:c.url.split('/')[1]});
-    });
-    if(c.id==='store_sign'){
-      const originals=new Map(signs.filter(s=>s.observation_id).map(s=>[s.observation_id,s])),seen=new Set();
-      rows=rows.map(row=>{const old=originals.get(row.id);seen.add(row.id);return old?{...old,...row,legacy_record:true}:row;});
-      rows.push(...signs.filter(s=>!seen.has(s.id)));
+    $('focus-results').disabled=busy||!total||queryError;
+    $('download-data').disabled=$('download-manifest').disabled=busy||queryError||!total;
+    $('download-summary').textContent=queryError?t('Some selected layers failed to load. Retry before downloading.'):busy?t('Loading selected layers…'):`${total.toLocaleString()} ${grouped()?t('Selected objects'):t('Selected observations')}`;
+    for(const c of categories.values()){
+      const count=document.querySelector(`[data-category-count="${c.id}"]`);
+      if(count){count.textContent=(enabled.has(c.id)?result?.counts[c.id]||0:c.count||0).toLocaleString();count.title=t(enabled.has(c.id)?'Selected objects':'Total in snapshot; enable layer to filter by capture date');}
     }
-    return rows;
   }
-  async function ensureLayer(id){
-    const c=categories.get(id);
-    if(!c?.url||loaded.has(id)&&!loaded.get(id).fallback)return;
-    if(pending.has(id))return pending.get(id);
-    const generation=manifest?.snapshot_id;
-    const task=fetchJSON(c.url).then(data=>{
-      if(generation!==manifest?.snapshot_id)return;
-      loaded.set(id,parseLayer(c,data));failed.delete(id);if(!failed.size)$('layer-error').textContent='';updateYears();
-    }).catch(()=>{failed.add(id);$('layer-error').textContent=`${t('Could not load')} ${t(c.label)}. ${t('Select it to retry.')}`;}).finally(()=>{pending.delete(id);updateSelection();});
-    pending.set(id,task);updateSelection();return task;
+  async function refreshVisible(snapshot=manifest){
+    if(!map||!manifest)return false;
+    const generation=++queryGeneration;
+    queryController?.abort();queryController=new AbortController();queryBusy=true;pageBusy=false;updateCounts();
+    try{
+      const params=queryParams();params.set('snapshot',snapshot.query_snapshot);
+      const next=await fetchJSON('/api/query?'+params,{signal:queryController.signal});
+      if(generation!==queryGeneration)return false;
+      manifest=snapshot;result=next;serverCells=next.cells||[];hasMore=next.has_more;queryError=false;
+      order=document.body.dataset.view==='wall'?next.items:[];
+      panelItems=document.body.dataset.view==='map'?next.items:[];
+      $('layer-error').textContent='';renderWall();renderPanel();observations.draw();return true;
+    }catch(error){
+      if(generation!==queryGeneration||error.name==='AbortError')return false;
+      queryError=true;$('layer-error').textContent=t('Could not load')+'. '+t('Select it to retry.');return false;
+    }finally{if(generation===queryGeneration){queryBusy=false;updateCounts();saveState();}}
+  }
+  async function loadMore(){
+    if(!hasMore||pageBusy||queryBusy||queryError)return;
+    const generation=queryGeneration,isWall=document.body.dataset.view==='wall',items=isWall?order:panelItems;
+    const params=queryParams();params.set('offset',items.length);params.set('map','0');
+    pageBusy=true;$('results-more').disabled=true;
+    try{
+      const next=await fetchJSON('/api/query?'+params,{signal:queryController.signal});
+      if(generation!==queryGeneration)return;
+      items.push(...next.items);hasMore=next.has_more;
+      const target=isWall?wall:$('map-thumbnails');
+      for(const row of next.items)target.append(tile(row,items));
+      $('results-more').hidden=!hasMore;
+      if(isWall&&hasMore&&$('more').getBoundingClientRect().top<innerHeight+600)setTimeout(loadMore,0);
+    }catch(error){if(error.name!=='AbortError')notice(t('Could not load')+'. '+t('Select it to retry.'));}
+    finally{if(generation===queryGeneration){pageBusy=false;$('results-more').disabled=false;}}
   }
   function addLayer(c){
     const row=document.createElement('label');row.className='layer-option';
@@ -200,7 +141,7 @@
     const name=document.createElement('span');name.textContent=t(c.label);
     const count=document.createElement('small');count.dataset.categoryCount=c.id;count.textContent=(c.count||0).toLocaleString();
     row.append(input,swatch,name,count);$('layer-options').append(row);
-    input.onchange=async()=>{if(input.checked){enabled.add(c.id);await ensureLayer(c.id);}else enabled.delete(c.id);updateSelection();};
+    input.onchange=()=>{if(input.checked)enabled.add(c.id);else enabled.delete(c.id);changeFilters();};
   }
   function drawBarrio(fit=false){
     if(barrioLayer){map.removeLayer(barrioLayer);barrioLayer=null;}
@@ -211,23 +152,29 @@
     const button=document.createElement('button');button.className='tile';button.dataset.objectId=itemId(row);button.style.borderBottomColor=color(row);
     button.setAttribute('aria-label',[label(row),row.text||row.t,row.barrio].filter(Boolean).join(' · '));button.setAttribute('aria-pressed',String(itemId(row)===selectedId));
     const image=document.createElement('img');image.loading='lazy';cropStorage.image(image,row.crop);image.alt='';button.append(image);
-    if(row.views?.length>1){const badge=document.createElement('span');badge.className='view-count';badge.textContent=`${row.views.length} ${t('views')}`;button.append(badge);}
+    if(row.view_count>1){const badge=document.createElement('span');badge.className='view-count';badge.textContent=`${row.view_count} ${t('views')}`;button.append(badge);}
     button.onclick=()=>{browse=items;open(row);};return button;
   }
-  function more(){const end=Math.min(order.length,shown+120);for(;shown<end;shown++)wall.append(tile(order[shown],order));}
-  function renderWall(){if(document.body.dataset.view!=='wall')return;wall.replaceChildren();shown=0;more();if(!order.length){const empty=document.createElement('p');empty.textContent=t('No objects match these filters.');wall.append(empty);}}
+  function renderWall(){
+    if(document.body.dataset.view!=='wall')return;
+    wall.replaceChildren();for(const row of order)wall.append(tile(row,order));
+    if(!order.length){const empty=document.createElement('p');empty.textContent=t('No objects match these filters.');wall.append(empty);}
+    if(hasMore&&$('more').getBoundingClientRect().top<innerHeight+600)setTimeout(loadMore,0);
+  }
   function renderPanel(){
     if(document.body.dataset.view!=='map')return;
-    panelItems=pointSelection||active.filter(inMap);panelShown=0;$('map-thumbnails').replaceChildren();
-    $('results-title').textContent=`${t(pointSelection?'At this point':'In this area')} · ${panelItems.length.toLocaleString()}`;
+    $('map-thumbnails').replaceChildren();
+    $('results-title').textContent=`${t(pointSelection?'At this point':'In this area')} · ${(pointSelection?.count??result?.visible??0).toLocaleString()}`;
     $('results-clear').hidden=!pointSelection;$('results-empty').textContent=panelItems.length?'':t('No objects in this area. Move the map or change filters.');
-    if(!$('map-results').classList.contains('collapsed'))morePanel();
+    if(!$('map-results').classList.contains('collapsed'))for(const row of panelItems)$('map-thumbnails').append(tile(row,panelItems));
+    $('results-more').hidden=!hasMore;$('results-more').disabled=pageBusy;
   }
-  function morePanel(){const end=Math.min(panelItems.length,panelShown+48);for(;panelShown<end;panelShown++)$('map-thumbnails').append(tile(panelItems[panelShown],panelItems));$('results-more').hidden=panelShown>=panelItems.length;}
   function setView(view,save=true){
+    mapViewport();const changed=document.body.dataset.view!==view;
     document.body.dataset.view=view;$('v-map').setAttribute('aria-pressed',String(view==='map'));$('v-wall').setAttribute('aria-pressed',String(view==='wall'));
     detail.setAttribute('aria-modal',String(view==='wall'));
-    if(view==='map'){map.invalidateSize();renderPanel();}else renderWall();
+    if(view==='map')map.invalidateSize();
+    if(changed&&save)updateSelection();
     if(save)saveState(true);
   }
   function showPic(){
@@ -239,10 +186,20 @@
     if(on&&row.bx){const[x0,y0,x1,y1]=row.bx;Object.assign($('d-box').style,{left:x0*100+'%',top:y0*100+'%',width:(x1-x0)*100+'%',height:(y1-y0)*100+'%'});detail.dataset.full='1';}else delete detail.dataset.full;
     $('full').setAttribute('aria-pressed',String(on));$('full').textContent=t(on?'show crop':'full image');$('full').hidden=!row.raw;
   }
-  function open(object,view,save=true){
+  async function open(object,view,save=true){
+    const generation=++detailGeneration;
+    if(!object.views){
+      try{
+        const params=queryParams();params.set('id',itemId(object));
+        object=await fetchJSON('/api/object?'+params);
+        if(generation!==detailGeneration)return;
+      }catch(error){if(generation===detailGeneration)notice(t('Could not load')+'. '+t('Select it to retry.'));return;}
+    }
+    if(typeof view==='string')view=object.views.find(v=>v.id===view);
+
     if(!detail.hasAttribute('open'))returnFocus=document.activeElement;
     curObject=object;curSign=view||object;selectedId=itemId(object);const row=curSign;
-    const views=object.views||[object],index=browse.indexOf(object),viewIndex=views.findIndex(v=>v.id===row.id);
+    const views=object.views||[object],index=browse.findIndex(item=>itemId(item)===itemId(object)),viewIndex=views.findIndex(v=>v.id===row.id);
     $('d-text').textContent=row.text||row.t||row.b||label(row);
     $('d-id').textContent=`${label(row)} · ${Math.max(1,index+1)} / ${Math.max(1,browse.length)}${views.length>1?' · '+t('viewpoint')+' '+(viewIndex+1)+' / '+views.length:''}`;
     $('d-where').textContent=[row.barrio,row.st,row.proposal?t('SAM detection · camera location'):null].filter(Boolean).join(' · ');
@@ -261,77 +218,15 @@
     for(const button of document.querySelectorAll('.tile[data-object-id]'))button.setAttribute('aria-pressed',String(button.dataset.objectId===selectedId));
     observations.draw();if(save)saveState(true);
   }
-  function close(save=true){detail.removeAttribute('open');selectedId='';curObject=null;curSign=null;observations.draw();if(returnFocus?.isConnected)returnFocus.focus();if(save)saveState();}
-  function step(delta){if(!browse.length||!curObject)return;const index=browse.indexOf(curObject);open(browse[(Math.max(0,index)+delta+browse.length)%browse.length]);}
+  function close(save=true){detailGeneration++;detail.removeAttribute('open');selectedId='';curObject=null;curSign=null;observations.draw();if(returnFocus?.isConnected)returnFocus.focus();if(save)saveState();}
+  function step(delta){if(!browse.length||!curObject)return;const index=browse.findIndex(item=>itemId(item)===itemId(curObject));open(browse[(Math.max(0,index)+delta+browse.length)%browse.length]);}
 
-  function downloadRecord(row){
-    const views=row.views||[row];
-    return {
-      id:itemId(row),observation_id:row.id,group_id:row.duplicate_group||null,
-      member_ids:views.map(v=>v.id),observation_count:views.length,category:row.category,
-      category_status:row.status||(row.proposal?'unverified_proposal':'legacy_detection'),
-      source:sourceOf(row),sources:[...new Set(views.map(sourceOf))],capture_date:row.d||null,
-      capture_dates:[...new Set(views.map(v=>v.d).filter(Boolean))],latitude:row.la,longitude:row.lo,
-      location_basis:row.location_basis||(row.proposal?'camera':'estimated_object'),
-      barrio:row.barrio,barrio_id:row.barrio_id,barrio_basis:'recorded_position_in_municipal_polygon',
-      score:row.score??null,prompt:row.prompt||null,text:row.group_text||row.text||row.t||'',
-      ocr_model:row.ocr_model||null,view_id:row.view_id||null,run_id:row.run_id||null,
-      snapshot_id:row.snapshot_id||null,provider_url:row.u||null,
-      crop_url:row.crop?new URL(cropStorage.url(row.crop),location.href).href:null,
-      context_url:row.raw?new URL(row.raw,location.href).href:null,
-      box_normalized:row.bx||null,
-      observations:views.map(v=>({id:v.id,source:sourceOf(v),capture_date:v.d||null,
-        latitude:v.la,longitude:v.lo,location_basis:v.location_basis||(v.proposal?'camera':'estimated_object'),
-        barrio:v.barrio,barrio_id:v.barrio_id,score:v.score??null,text:v.text||v.t||'',
-        run_id:v.run_id||null,view_id:v.view_id||null,provider_url:v.u||null,
-        crop_url:v.crop?new URL(cropStorage.url(v.crop),location.href).href:null,context_url:v.raw?new URL(v.raw,location.href).href:null}))
-    };
-  }
-  function downloadMetadata(rows){
-    const bounds=map.getBounds();
-    return {schema_version:1,exported_at:new Date().toISOString(),city:legacy.meta.city||'A Coruña',
-      selection_url:location.href,record_type:grouped()?'object_groups':'observations',record_count:rows.length,
-      observation_count:rows.reduce((sum,row)=>sum+(row.views?.length||1),0),filters:currentFilters(),
-      bounds:$('area-filter').checked?[bounds.getWest(),bounds.getSouth(),bounds.getEast(),bounds.getNorth()]:null,
-      grouping:'Partial duplicate proposals; singleton records may still depict the same object.',
-      selection:'Category, source, date and barrio filter observations before grouping. Text searches the retained viewpoints. Map-area filtering uses each displayed representative position and retains its matching viewpoints.',
-      position:'Coordinates retain the recorded position basis. Barrio follows this position; most new observations use camera coordinates.',
-      images:'URLs reference the existing viewer assets. Image files are not included. Provider rights apply.',
-      csv:'Arrays and nested records are JSON strings. Spreadsheet formula prefixes are escaped with an apostrophe.',
-      barrios:barrioData?.metadata||null,snapshot:manifest,legacy:legacy.meta};
-  }
-  function saveBlob(parts,type,name){
-    const url=URL.createObjectURL(new Blob(parts,{type})),anchor=document.createElement('a');anchor.href=url;anchor.download=name;document.body.append(anchor);anchor.click();anchor.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
-  }
-  function csvCell(value){
-    let text=value==null?'':typeof value==='object'?JSON.stringify(value):String(value);
-    if(typeof value==='string'&&/^[\s]*[=+@-]/.test(text))text="'"+text;
-    return '"'+text.replace(/"/g,'""')+'"';
-  }
-  async function downloadData(manifestOnly=false){
-    const rows=selection().slice();if(exporting||refreshing||!rows.length||[...enabled].some(id=>pending.has(id)||failed.has(id)||!loaded.has(id)))return;
-    const format=$('download-format').value,metadata=downloadMetadata(rows);
-    const basename=`typology-coruna-${grouped()?'objects':'observations'}-${new Date().toISOString().slice(0,10)}`;
-    if(manifestOnly){saveBlob([JSON.stringify(metadata,null,2)],'application/json',basename+'-manifest.json');return;}
-    exporting=true;$('download-data').disabled=true;notice(t('Preparing download…'));
-    try{
-      const parts=[],sample=downloadRecord(rows[0]),fields=Object.keys(sample);
-      if(format==='csv')parts.push('\uFEFF'+fields.map(csvCell).join(',')+'\r\n');
-      if(format==='geojson')parts.push('{"type":"FeatureCollection","metadata":'+JSON.stringify(metadata)+',"features":[');
-      for(let offset=0;offset<rows.length;offset+=500){
-        let chunk='';
-        for(let i=offset;i<Math.min(rows.length,offset+500);i++){
-          const record=downloadRecord(rows[i]);
-          if(format==='csv')chunk+=fields.map(key=>csvCell(record[key])).join(',')+'\r\n';
-          else if(format==='jsonl')chunk+=JSON.stringify(record)+'\n';
-          else chunk+=(i?',':'')+JSON.stringify({type:'Feature',id:record.id,geometry:{type:'Point',coordinates:[record.longitude,record.latitude]},properties:record});
-        }
-        parts.push(chunk);await new Promise(resolve=>setTimeout(resolve,0));
-      }
-      if(format==='geojson')parts.push(']}');
-      saveBlob(parts,{csv:'text/csv;charset=utf-8',geojson:'application/geo+json',jsonl:'application/x-ndjson'}[format],basename+'.'+format);notice(t('Download ready'));
-    }catch(error){notice(t('Download failed. Try a smaller selection.'));}
-    finally{exporting=false;refreshVisible();}
+  function downloadData(manifestOnly=false){
+    if(queryBusy||refreshing||queryError||!result?.total)return;
+    const params=queryParams();params.set('format',manifestOnly?'manifest':$('download-format').value);
+    // The server streams the entire selection. Gallery pagination never limits exports.
+    const anchor=document.createElement('a');anchor.href='/api/export?'+params;anchor.download='';document.body.append(anchor);anchor.click();anchor.remove();
+    notice(t('Preparing download…'));
   }
   // URLs store browsing state, never data. Back restores filters and the selected object.
   function stateParams(){
@@ -370,28 +265,24 @@
     if(p.has('lat')&&p.has('lon')&&Number.isFinite(lat)&&Number.isFinite(lon)&&Math.abs(lat)<=85&&Math.abs(lon)<=180)map.setView([lat,lon],zoom>=2&&zoom<=20?zoom:15);
     drawBarrio(!p.has('lat')&&!!$('barrio-filter').value);
     setView(p.get('view')==='wall'?'wall':'map',false);
-    await Promise.all([...enabled].map(ensureLayer));if(generation!==restoreGeneration)return;
-    updateSelection();
+    await updateSelection();if(generation!==restoreGeneration)return;
     const target=p.get('object');
-    if(target){const row=active.find(row=>itemId(row)===target||row.id===target);if(row){browse=active;open(row,row.views?.find(v=>v.id===p.get('observation')),false);}}
+    if(target){browse=document.body.dataset.view==='wall'?order:panelItems;await open({id:target},p.get('observation'),false);}
     restoring=false;saveState();
   }
 
-  const initial=await Promise.allSettled([fetchJSON('data.json'),fetchJSON('barrios.geojson'),fetchJSON('layers/manifest.json'),fetchJSON('crop-storage.json')]);
-  if(initial[3].status==='fulfilled')cropStorage=CropStorage.create(initial[3].value);
-  if(initial[0].status==='fulfilled')legacy=initial[0].value;
+  const initial=await Promise.allSettled([fetchJSON('/api/meta'),fetchJSON('barrios.geojson'),fetchJSON('crop-storage.json')]);
+  if(initial[2].status==='fulfilled')cropStorage=CropStorage.create(initial[2].value);
   if(initial[1].status==='fulfilled')prepareBarrios(initial[1].value);else $('barrio-status').textContent=t('Municipal barrio boundaries unavailable.');
-  if(initial[2].status==='fulfilled')manifest=initial[2].value;
-  const signs=legacy.signs.map(s=>decorate({...s,category:'store_sign',legacy_record:true,observation_id:s.source_crop_id,id:s.source_crop_id||s.id,score:s.score??s.s,crop:`img/${s.id}.jpg`,raw:s.ctx?`ctx/${s.id}.jpg`:null,source:s.src==='g'?'gsv':'apple',location_basis:'estimated_object',status:'legacy_detection'}));
-  signs.fallback=true;loaded.set('store_sign',signs);
-  for(const cluster of legacy.meta.clustering?.clusters||[])clusters.set(cluster.id,cluster);
-  categories.set('store_sign',{id:'store_sign',label:'Shop signs',color:'#d79a3a',count:signs.length});
-  for(const c of manifest?.categories||[])categories.set(c.id,c);
+  if(initial[0].status!=='fulfilled'){$('layer-error').textContent=t('Could not load')+'. '+t('Reload the page to retry.');return;}
+  manifest=initial[0].value;
+  for(const cluster of manifest.legacy.clustering?.clusters||[])clusters.set(cluster.id,cluster);
+  for(const c of manifest.categories)categories.set(c.id,c);
   for(const c of categories.values())addLayer(c);
   for(const cluster of clusters.values()){const option=document.createElement('option');option.value=cluster.id;option.textContent=`${cluster.label} · ${cluster.name}`;$('cluster-filter').append(option);}
   $('cluster-coverage').textContent=t('Cluster colors apply to previously clustered shop signs');
-  for(const id of ['year-from','year-to']){$(id).min=2008;$(id).max=new Date().getFullYear();}
-  $('year-from').value=2008;$('year-to').value=new Date().getFullYear();yearLabels();
+  for(const id of ['year-from','year-to']){$(id).min=Math.min(2008,manifest.min_year);$(id).max=Math.max(new Date().getFullYear(),manifest.max_year);}
+  $('year-from').value=$('year-from').min;$('year-to').value=$('year-to').max;yearLabels();
 
   map=L.map('map',{zoomControl:true,minZoom:2,maxZoom:20}).setView([43.3665,-8.4065],15);
   const satellite=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:20,maxNativeZoom:19,attribution:'Imagery &copy; Esri, Maxar, Earthstar Geographics'}).addTo(map);
@@ -403,35 +294,34 @@
     onRemove(m){m.off('moveend zoomend resize',this.draw,this);m.off('click',this.click,this);this.canvas.remove();},
     draw(){
       const size=map.getSize(),dpr=window.devicePixelRatio||1,c=this.canvas;c.width=size.x*dpr;c.height=size.y*dpr;c.style.width=size.x+'px';c.style.height=size.y+'px';L.DomUtil.setPosition(c,map.containerPointToLayerPoint([0,0]));
-      const ctx=c.getContext('2d');ctx.scale(dpr,dpr);const cells=new Map(),bounds=map.getBounds(),cell=map.getZoom()<17?18:10;
-      for(const row of active){if(!bounds.contains([row.la,row.lo]))continue;const p=map.latLngToContainerPoint([row.la,row.lo]),key=`${Math.floor(p.x/cell)}:${Math.floor(p.y/cell)}`;let group=cells.get(key);if(!group){group={x:p.x,y:p.y,items:[]};cells.set(key,group);}group.items.push(row);}
-      this.groups=[...cells.values()];
+      const ctx=c.getContext('2d');ctx.scale(dpr,dpr);
+      this.groups=serverCells.map(cell=>{const p=map.latLngToContainerPoint([cell.la,cell.lo]);return {...cell,x:p.x,y:p.y};});
       for(const group of this.groups){
-        const colors=[...new Set(group.items.map(color))],r=group.items.length>1?Math.min(12,5+Math.log2(group.items.length)):4;group.r=r;
+        const {colors}=group,r=group.count>1?Math.min(12,5+Math.log2(group.count)):4;group.r=r;
         colors.forEach((col,i)=>{ctx.beginPath();ctx.moveTo(group.x,group.y);ctx.arc(group.x,group.y,r,i/colors.length*Math.PI*2,(i+1)/colors.length*Math.PI*2);ctx.closePath();ctx.fillStyle=col;ctx.fill();});
-        ctx.strokeStyle=group.items.some(row=>itemId(row)===selectedId)?'#fff':'#141519';ctx.lineWidth=group.items.some(row=>itemId(row)===selectedId)?3:1;ctx.beginPath();ctx.arc(group.x,group.y,r,0,Math.PI*2);ctx.stroke();
-        if(group.items.length>1){ctx.fillStyle='#fff';ctx.font='bold 10px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(group.items.length>99?'99+':String(group.items.length),group.x,group.y);}
+        ctx.strokeStyle=group.id===selectedId?'#fff':'#141519';ctx.lineWidth=group.id===selectedId?3:1;ctx.beginPath();ctx.arc(group.x,group.y,r,0,Math.PI*2);ctx.stroke();
+        if(group.count>1){ctx.fillStyle='#fff';ctx.font='bold 10px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(group.count>99?'99+':String(group.count),group.x,group.y);}
       }
-      $('map-status').hidden=false;$('map-status').textContent=`${this.groups.reduce((n,g)=>n+g.items.length,0).toLocaleString()} ${grouped()?t('items'):t('observations')} ${t('in view · click a dot to inspect')}`;
+      $('map-status').hidden=false;$('map-status').textContent=`${(result?.visible||0).toLocaleString()} ${grouped()?t('items'):t('observations')} ${t('in view · click a dot to inspect')}`;
     },
     click(event){
       const p=event.containerPoint;let best=null,distance=Infinity;
       for(const group of this.groups){const d=Math.hypot(group.x-p.x,group.y-p.y);if(d<group.r+7&&d<distance){best=group;distance=d;}}
       if(!best)return;
-      if(best.items.length===1){browse=active.filter(inMap);open(best.items[0]);return;}
-      close();pointSelection=best.items;$('map-results').classList.remove('collapsed');$('results-toggle').textContent=t('Hide');$('results-toggle').setAttribute('aria-expanded','true');renderPanel();$('map-thumbnails').querySelector('button')?.focus();
+      if(best.count===1){browse=panelItems;open({id:best.id});return;}
+      close();pointSelection=best;$('map-results').classList.remove('collapsed');$('results-toggle').textContent=t('Hide');$('results-toggle').setAttribute('aria-expanded','true');refreshVisible().then(()=>$('map-thumbnails').querySelector('button')?.focus());
     }
   });
   const observations=new ObservationCanvas().addTo(map);
   let mapTimer;
-  map.on('moveend',()=>{pointSelection=null;refreshVisible();clearTimeout(mapTimer);mapTimer=setTimeout(()=>saveState(true),200);});
-  new ResizeObserver(()=>map.invalidateSize()).observe($('map'));
-  new IntersectionObserver(entries=>{if(entries[0].isIntersecting&&shown<order.length&&document.body.dataset.view==='wall')more();},{rootMargin:'600px'}).observe($('more'));
-  $('results-more').onclick=morePanel;
-  $('results-clear').onclick=()=>{pointSelection=null;renderPanel();};
+  map.on('moveend',()=>{if(restoring||document.body.dataset.view!=='map')return;pointSelection=null;clearTimeout(mapTimer);mapTimer=setTimeout(()=>{refreshVisible();saveState(true);},200);});
+  new ResizeObserver(()=>{if(document.body.dataset.view==='map')map.invalidateSize();}).observe($('map'));
+  new IntersectionObserver(entries=>{if(entries[0].isIntersecting&&hasMore&&document.body.dataset.view==='wall')loadMore();},{rootMargin:'600px'}).observe($('more'));
+  $('results-more').onclick=loadMore;
+  $('results-clear').onclick=()=>{pointSelection=null;refreshVisible();};
   $('results-toggle').onclick=()=>{const collapsed=$('map-results').classList.toggle('collapsed');$('results-toggle').textContent=t(collapsed?'Show':'Hide');$('results-toggle').setAttribute('aria-expanded',String(!collapsed));if(!collapsed)renderPanel();};
   $('v-map').onclick=()=>setView('map');$('v-wall').onclick=()=>setView('wall');
-  $('shuffle').onclick=()=>{setView('wall');for(let i=order.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[order[i],order[j]]=[order[j],order[i]];}renderWall();};
+  $('shuffle').onclick=()=>{shuffleSeed=1+Math.floor(Math.random()*2147483646);setView('wall',false);updateSelection();saveState();};
   $('full').onclick=()=>{full=!full;showPic();};$('close').onclick=()=>close();$('prev').onclick=()=>step(-1);$('next').onclick=()=>step(1);
   detail.onclick=event=>{if(event.target===detail&&document.body.dataset.view==='wall')close();};
   document.addEventListener('keydown',event=>{
@@ -447,39 +337,31 @@
   function changeFilters(){close(false);updateSelection();saveState(true);}
   for(const id of ['source-filter','area-filter','group-duplicates','date-unknown','cluster-filter'])$(id).onchange=changeFilters;
   $('barrio-filter').onchange=()=>{drawBarrio(true);changeFilters();};
-  $('cluster-colors').onchange=()=>{renderWall();renderPanel();observations.draw();saveState();};
-  for(const id of ['year-from','year-to'])$(id).oninput=()=>{if(Number($('year-from').value)>Number($('year-to').value))$(id==='year-from'?'year-to':'year-from').value=$(id).value;yearLabels();changeFilters();};
+  $('cluster-colors').onchange=()=>{refreshVisible();saveState();};
+  let yearTimer;
+  for(const id of ['year-from','year-to'])$(id).oninput=()=>{if(Number($('year-from').value)>Number($('year-to').value))$(id==='year-from'?'year-to':'year-from').value=$(id).value;yearLabels();clearTimeout(yearTimer);yearTimer=setTimeout(changeFilters,180);};
   let searchTimer;$('object-search').oninput=()=>{clearTimeout(searchTimer);searchTimer=setTimeout(changeFilters,200);};
-  $('focus-results').onclick=()=>{if(!active.length)return;setView('map');map.fitBounds(L.latLngBounds(active.map(row=>[row.la,row.lo])),{padding:[40,40],maxZoom:18});};
+  $('focus-results').onclick=()=>{if(!result?.bounds)return;const [w,s,e,n]=result.bounds;setView('map');map.fitBounds([[s,w],[n,e]],{padding:[40,40],maxZoom:18});};
   $('reset-filters').onclick=()=>{
     $('object-search').value='';$('barrio-filter').value='';$('source-filter').value='';$('area-filter').checked=false;$('date-unknown').checked=true;
     $('year-from').value=$('year-from').min;$('year-to').value=$('year-to').max;$('cluster-filter').value='';yearLabels();drawBarrio();changeFilters();
   };
-  $('layers-all').onclick=async()=>{for(const id of categories.keys())enabled.add(id);document.querySelectorAll('[data-category]').forEach(input=>input.checked=true);await Promise.all([...enabled].map(ensureLayer));updateSelection();};
+  $('layers-all').onclick=()=>{for(const id of categories.keys())enabled.add(id);document.querySelectorAll('[data-category]').forEach(input=>input.checked=true);changeFilters();};
   $('layers-none').onclick=()=>{enabled.clear();document.querySelectorAll('[data-category]').forEach(input=>input.checked=false);changeFilters();};
   $('download-data').onclick=()=>downloadData();$('download-manifest').onclick=()=>downloadData(true);
   $('share').onclick=async()=>{saveState();try{await navigator.clipboard.writeText(location.href);notice(t('View link copied'));}catch(error){window.prompt(t('Copy this view link'),location.href);}};
   window.addEventListener('popstate',restoreState);
   $('snapshot-update').onclick=async()=>{
-    if(!availableManifest||detail.hasAttribute('open')||pending.size)return;
-    refreshing=true;
-    const controls=[...document.querySelectorAll('.object-layers input,.object-layers select,.object-layers button')];
-    const disabled=controls.map(control=>control.disabled);controls.forEach(control=>control.disabled=true);
-    refreshVisible();
-    const button=$('snapshot-update');button.disabled=true;$('update-status').textContent=t('Updating selected layers…');
-    const next=availableManifest;
-    try{
-      const staged=await Promise.all(next.categories.filter(c=>enabled.has(c.id)).map(async c=>[c.id,parseLayer(c,await fetchJSON(c.url))]));
-      manifest=next;
-      for(const c of next.categories){if(!categories.has(c.id))addLayer(c);categories.set(c.id,c);loaded.delete(c.id);}
-      if(!next.categories.some(c=>c.id==='store_sign'))loaded.set('store_sign',signs);
-      for(const [id,rows]of staged){loaded.set(id,rows);failed.delete(id);}
-      if(availableManifest?.snapshot_id===next.snapshot_id)availableManifest=null;
-      button.hidden=!availableManifest;updateYears();updateSelection();$('update-status').textContent='';
-    }catch(error){$('update-status').textContent=t('Update failed. Your current data is unchanged; try again.');}
-    finally{refreshing=false;controls.forEach((control,index)=>control.disabled=disabled[index]);button.disabled=false;refreshVisible();}
+    if(!availableManifest||detail.hasAttribute('open')||queryBusy)return;
+    refreshing=true;const next=availableManifest;
+    $('snapshot-update').disabled=true;$('update-status').textContent=t('Updating selected layers…');
+    const ok=await updateSelection(next);
+    if(ok){
+      for(const c of next.categories){if(!categories.has(c.id))addLayer(c);categories.set(c.id,c);}
+      availableManifest=null;$('snapshot-update').hidden=true;$('update-status').textContent='';
+    }else{$('update-status').textContent=t('Update failed. Your current data is unchanged; try again.');}
+    refreshing=false;$('snapshot-update').disabled=false;updateCounts();
   };
-  setInterval(async()=>{try{const next=await fetchJSON('layers/manifest.json');if(manifest&&next.snapshot_id!==manifest.snapshot_id){availableManifest=next;$('snapshot-update').hidden=false;}}catch(error){}},60000);
-  if(!manifest)$('layer-error').textContent=t('Object layers are unavailable. Saved shop signs are still available.');
+  setInterval(async()=>{try{const next=await fetchJSON('/api/meta');if(next.query_snapshot!==manifest.query_snapshot){availableManifest=next;$('snapshot-update').hidden=false;}}catch(error){}},60000);
   ready=true;await restoreState();
 })();

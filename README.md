@@ -638,4 +638,55 @@ The default graffiti/street-name layers total 114.2 MB decoded, approximately
 8.9 MB encoded in the local browser test. Initial legacy data adds 6.3 MB decoded.
 That desktop test used about 199 MB JS heap and observed main-thread tasks up to
 589 ms. These are local desktop measurements, not mobile or public-network timings.
-R2 addresses image delivery; viewport queries or tiled data are separate work.
+R2 addresses image delivery. The query API below reduces the data needed for browsing.
+
+### Map and gallery queries, October 13
+
+The viewer now requests `/api/query` instead of downloading `data.json` and whole
+category GeoJSON files. Each response contains exact map-cell counts and 48
+gallery records. Opening an object fetches its full matching viewpoints from
+`/api/object`. CSV, GeoJSON and JSONL downloads stream the entire filtered
+selection from `/api/export`; pagination does not limit them. The published
+GeoJSON files remain available for other consumers.
+
+`explore/object_api.py` uses Python's standard library and SQLite with R-tree and
+FTS5 trigram indexes. The index stays on the SSD at
+`~/.local/state/typology-machine/query`, separate from the large image archive.
+Caddy proxies `/api/*` to `typology-object-api.service` on localhost port 8794.
+Install it with:
+
+```sh
+.venv/bin/python explore/object_api.py build
+cp explore/services/typology-object-api.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now typology-object-api.service
+```
+
+The existing layer refresh service runs `object_api.py build` after publication.
+Unchanged inputs skip the rebuild. A new database passes an integrity check
+before an atomic pointer update; a failed build leaves the current index intact.
+The preceding database stays available for open tabs. The update button switches
+to a newly indexed snapshot. Rebuild the index after changing legacy data or
+barrio boundaries as well. Deploy `site/app.js` together with the API and Caddy
+route; a plain static file server alone no longer supports the viewer. Update
+the script version in `index.html` when changing `app.js`, since an edge cache
+may still hold an earlier script.
+
+Three fresh Chromium page loads at 1365×900 on localhost, with the same default
+layers and 74,182 items in view, gave these results. Data sizes include the barrio
+boundaries and exclude image crops, basemap tiles and application assets.
+
+| Measurement | Before | After |
+| --- | ---: | ---: |
+| Compressed data transferred | 10.57 MB | 0.344 MB |
+| Decoded data | 121.36 MB | 1.15 MB |
+| Median time until thumbnails and counts were ready | 2.492 s | 0.638 s |
+| Approximate browser JS heap | 225 MB | 10 MB |
+| Longest observed main-thread task | 527 ms | No tasks over 50 ms |
+
+These are local desktop measurements, not promises about mobile or public-network
+latency. Browser checks also covered all layers, pagination, shared-object links,
+source/barrio/text filters, raw observations, full-selection manifests, and stale
+responses after rapid search changes. API tests cover grouping before viewport
+filtering, date-based representative changes, exact legacy joins, accented text,
+complete streamed exports, invalid input and failed index publication.
