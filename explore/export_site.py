@@ -144,7 +144,7 @@ def main():
     storage_config = out / "crop-storage.json"
     if not storage_config.exists():
         shutil.copy(ROOT / "site/crop-storage.json", storage_config)
-    for name in ("index.html", "method.html", "app.js", "crop-storage.js", "barrios.geojson", "favicon.svg"):
+    for name in ("index.html", "method.html", "app.js", "crop-storage.js", "barrios.geojson", "favicon.svg", "favicon.png"):
         page = ROOT / "site" / name
         if page.exists():
             shutil.copy(page, out / name)

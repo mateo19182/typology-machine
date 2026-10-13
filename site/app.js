@@ -26,11 +26,12 @@
     'Reload the page to retry.':'Recarga la página para reintentar.',
     'Some selected layers failed to load. Retry before downloading.':'Algunas capas no se cargaron. Reinténtalo antes de descargar.'
   });
+  Object.assign(translations, {'Show on map':'Ver en mapa','Filters':'Filtros','Categories':'Categorías','Date and source':'Fecha y fuente','Display options':'Opciones de visualización','From':'Desde','To':'Hasta','Close filters':'Cerrar filtros','Shuffle wall':'Mezclar galería','Copy link':'Copiar enlace','Capture date known':'Fecha de captura conocida','All dates':'Todas las fechas','No categories':'Sin categorías'});
   const t=value=>language==='es'?(translations[value]||value):value;
   document.documentElement.lang=language;
   // Translate interface nodes only; detected text and provider metadata stay original.
   const $ = id => document.getElementById(id), wall = $('wall');
-  for(const element of document.querySelectorAll('nav, .cluster-controls, .object-layers, .detail .arrows, .map-results')){
+  for(const element of document.querySelectorAll('nav, .browse-tools, .detail .arrows, .map-results')){
     const walker=document.createTreeWalker(element,NodeFilter.SHOW_TEXT);let node;
     while(node=walker.nextNode()){const raw=node.nodeValue,trimmed=raw.trim();if(translations[trimmed])node.nodeValue=raw.replace(trimmed,t(trimmed));}
   }
@@ -91,7 +92,10 @@
   function updateCounts(){
     const busy=queryBusy||refreshing,total=result?.total||0;
     $('count').textContent=`${total.toLocaleString()} ${grouped()?t('items'):t('observations')}${busy?' · '+t('loading…'):''}`;
-    $('layer-summary').textContent=`${t('Object layers')} · ${enabled.size} ${t('on')}${busy?' · '+t('loading…'):''}`;
+    $('layer-summary').textContent=`${t('Filters')} · ${enabled.size}`;
+    const f=currentFilters(), names=[...enabled].map(id=>t(categories.get(id)?.label||id));
+    const summary=[names.join(', ')||t('No categories'),f.query?`“${f.query}”`:null,barrios.find(b=>b.id===f.barrio)?.name||(f.barrio==='outside'?t('Outside mapped barrios'):null),f.source?$('source-filter').selectedOptions[0].textContent:null,f.from!==$('year-from').min||f.to!==$('year-to').max?`${f.from}–${f.to}`:null,!f.unknown?t('Capture date known'):null,f.area?t('Only this map area'):null,!f.grouped?t('observations'):null].filter(Boolean).join(' · ');
+    $('filter-summary').textContent=summary;$('filter-summary').title=summary;
     $('cluster-controls').hidden=!enabled.has('store_sign')||!clusters.size;
     $('focus-results').disabled=busy||!total||queryError;
     $('download-data').disabled=$('download-manifest').disabled=busy||queryError||!total;
@@ -234,6 +238,7 @@
     params.set('lat',center.lat.toFixed(6));params.set('lon',center.lng.toFixed(6));params.set('z',map.getZoom());
     params.set('layers',f.categories.join(','));params.set('view',document.body.dataset.view);
     params.set('from',f.from);params.set('to',f.to);params.set('group',f.grouped?'1':'0');
+    if(shuffleSeed)params.set('seed',shuffleSeed);
     if(f.query)params.set('q',f.query);if(f.barrio)params.set('barrio',f.barrio);if(f.source)params.set('source',f.source);
     if(!f.unknown)params.set('unknown','0');if(f.area)params.set('area','1');if(f.cluster)params.set('cluster',f.cluster);
     if($('cluster-colors').checked)params.set('colors','1');
@@ -250,6 +255,7 @@
     const generation=++restoreGeneration;restoring=true;
     const p=new URLSearchParams(location.hash.slice(1));
     close(false);
+    shuffleSeed=Math.max(0,Math.min(2147483646,parseInt(p.get('seed'),10)||0));
     $('object-search').value=p.get('q')||'';
     $('barrio-filter').value=p.get('barrio')||'';$('source-filter').value=p.get('source')||'';
     $('area-filter').checked=p.get('area')==='1';$('group-duplicates').checked=p.get('group')!=='0';
@@ -320,6 +326,9 @@
   $('results-more').onclick=loadMore;
   $('results-clear').onclick=()=>{pointSelection=null;refreshVisible();};
   $('results-toggle').onclick=()=>{const collapsed=$('map-results').classList.toggle('collapsed');$('results-toggle').textContent=t(collapsed?'Show':'Hide');$('results-toggle').setAttribute('aria-expanded',String(!collapsed));if(!collapsed)renderPanel();};
+  $('filters-close').onclick=()=>{$('object-layers').open=false;$('layer-summary').focus();};
+  document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!detail.hasAttribute('open')){$('object-layers').open=false;$('layer-summary').focus();}});
+  document.addEventListener('click',event=>{if(!$('object-layers').contains(event.target))$('object-layers').open=false;});
   $('v-map').onclick=()=>setView('map');$('v-wall').onclick=()=>setView('wall');
   $('shuffle').onclick=()=>{shuffleSeed=1+Math.floor(Math.random()*2147483646);setView('wall',false);updateSelection();saveState();};
   $('full').onclick=()=>{full=!full;showPic();};$('close').onclick=()=>close();$('prev').onclick=()=>step(-1);$('next').onclick=()=>step(1);
@@ -339,10 +348,13 @@
   $('barrio-filter').onchange=()=>{drawBarrio(true);changeFilters();};
   $('cluster-colors').onchange=()=>{refreshVisible();saveState();};
   let yearTimer;
-  for(const id of ['year-from','year-to'])$(id).oninput=()=>{if(Number($('year-from').value)>Number($('year-to').value))$(id==='year-from'?'year-to':'year-from').value=$(id).value;yearLabels();clearTimeout(yearTimer);yearTimer=setTimeout(changeFilters,180);};
+  for(const id of ['year-from','year-to'])$(id).onchange=()=>{if(!$(id).value||!$(id).checkValidity()){$(id).value=id==='year-from'?$(id).min:$(id).max;}if(Number($('year-from').value)>Number($('year-to').value))$(id==='year-from'?'year-to':'year-from').value=$(id).value;yearLabels();clearTimeout(yearTimer);yearTimer=setTimeout(changeFilters,180);};
   let searchTimer;$('object-search').oninput=()=>{clearTimeout(searchTimer);searchTimer=setTimeout(changeFilters,200);};
   $('focus-results').onclick=()=>{if(!result?.bounds)return;const [w,s,e,n]=result.bounds;setView('map');map.fitBounds([[s,w],[n,e]],{padding:[40,40],maxZoom:18});};
   $('reset-filters').onclick=()=>{
+    enabled.clear();for(const id of ['graffiti','street_name_plate'])if(categories.has(id))enabled.add(id);
+    document.querySelectorAll('[data-category]').forEach(input=>input.checked=enabled.has(input.dataset.category));
+    $('group-duplicates').checked=true;$('cluster-colors').checked=false;shuffleSeed=0;
     $('object-search').value='';$('barrio-filter').value='';$('source-filter').value='';$('area-filter').checked=false;$('date-unknown').checked=true;
     $('year-from').value=$('year-from').min;$('year-to').value=$('year-to').max;$('cluster-filter').value='';yearLabels();drawBarrio();changeFilters();
   };

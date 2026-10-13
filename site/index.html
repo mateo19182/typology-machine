@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Typology Machine</title>
-<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon.png?v=2" type="image/png" sizes="32x32">
+<link rel="icon" href="favicon.svg?v=2" type="image/svg+xml">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
@@ -66,10 +67,9 @@ body[data-view="map"] .wall, body[data-view="map"] .more, body[data-view="map"] 
 footer { padding: 28px 16px; color: var(--dim); display: flex; flex-wrap: wrap; gap: 6px 28px; border-top: 1px solid var(--line); flex: none }
 @media (max-width: 520px) { .wall { grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)) } }
 
-.object-layers { position: absolute; z-index: 800; right: 14px; top: 76px; width: 295px; max-height: calc(100dvh - 180px); overflow: auto; border: 1px solid #37383c; border-radius: 8px; background: rgba(15,17,20,.96); box-shadow: 0 4px 24px #0006; }
 .object-layers summary { cursor: pointer; padding: 12px 14px; color: var(--fg); font-size: 13px; }
 .layer-search { display:grid; gap:7px; padding:0 14px 12px; }.layer-search label,.layer-search span { font-size:10px; color:#aaa59b; }.layer-search input { width:100%; padding:8px; border:1px solid #444; border-radius:4px; color:var(--fg); background:var(--bg); font:inherit; }.layer-search button,.snapshot-update button { font:inherit; padding:5px 8px; border:1px solid #555; border-radius:4px; color:var(--amber); background:var(--tile); cursor:pointer; }.snapshot-update { padding:0 14px; }.snapshot-update button { margin-bottom:10px; }.snapshot-update span { font-size:10px; color:#aaa59b; }.snapshot-update button[hidden] { display:none; }
-.capture-filter { margin:0 14px 12px; padding:10px; border:1px solid #37383c; border-radius:4px; }.capture-filter legend { color:var(--fg); }.year-values { display:flex; justify-content:space-between; }.year-slider { position:relative; height:30px; }.year-slider::before { content:''; position:absolute; top:14px; left:0; right:0; height:3px; background:#555; }.year-slider input { position:absolute; inset:0; width:100%; margin:0; appearance:none; background:transparent; pointer-events:none; }.year-slider input::-webkit-slider-thumb { appearance:none; pointer-events:auto; width:16px; height:16px; border-radius:50%; background:var(--amber); cursor:pointer; }.year-slider input::-moz-range-thumb { pointer-events:auto; width:16px; height:16px; border:0; border-radius:50%; background:var(--amber); cursor:pointer; }.year-slider input:focus-visible { outline:1px solid var(--amber); outline-offset:4px; }
+.capture-filter { margin:0 14px 12px; padding:10px; border:1px solid #37383c; border-radius:4px; }.capture-filter legend { color:var(--fg); }
 .layer-heading { display: flex; justify-content: space-between; padding: 0 14px 8px; color: #a8a49b; }
 .layer-heading button { color: var(--amber); font: inherit; background: none; border: 0; cursor: pointer; }
 .layer-option { display: grid; grid-template-columns: 16px 9px 1fr auto; align-items: center; gap: 8px; padding: 6px 12px; cursor: pointer; }
@@ -79,8 +79,8 @@ footer { padding: 28px 16px; color: var(--dim); display: flex; flex-wrap: wrap; 
 .observation-canvas { pointer-events: none; }.detail button:disabled { opacity: .3; cursor: default; }
 #map-status[hidden] { display:none; }
 #map-status { position: absolute; bottom: 24px; left: 12px; z-index: 700; padding: 5px 8px; background: #101216db; color: #ccc6bb; font-size: 10px; pointer-events: none; max-width: calc(100vw - 24px); }
-body[data-view="wall"] #map-status { display: none; }body[data-view="wall"] .object-layers { flex: none; position: relative; top: auto; right: auto; width: auto; margin: 10px; max-height: none; }body[data-view="wall"] #layer-options { display: grid; grid-template-columns: repeat(auto-fit,minmax(245px,1fr)); }
-@media(max-width:600px){ header .mast { white-space:normal; font-size:10px; letter-spacing:.1em; } .object-layers { top: 90px; right: 8px; width: 250px; max-height: 45dvh; }.detail .top { flex-wrap: wrap; gap: 8px; }.detail .arrows { gap: 12px; flex-wrap: wrap; }.detail .pic img { max-height: 52vh; }.cluster-controls { font-size: 10px; } }
+body[data-view="wall"] #map-status { display: none; }
+@media(max-width:600px){ header .mast { white-space:normal; font-size:10px; letter-spacing:.1em; } .detail .top { flex-wrap: wrap; gap: 8px; }.detail .arrows { gap: 12px; flex-wrap: wrap; }.detail .pic img { max-height: 52vh; }.cluster-controls { font-size: 10px; } }
 .layer-search select,.downloads select { width:100%; background:var(--bg); color:var(--fg); border:1px solid #444; border-radius:4px; padding:7px; font:inherit; }
 .layer-search .inline-control { display:flex; gap:8px; align-items:center; }.inline-control input { width:auto; }
 .downloads { display:grid; grid-template-columns:1fr 1fr; gap:8px; }.downloads label,.downloads select,.downloads span { grid-column:1/-1; }.downloads span { color:#aaa59b; font-size:10px; }
@@ -98,7 +98,19 @@ body[data-view="map"] .detail[open] { display:flex; flex-direction:column; gap:8
 body[data-view="map"] .detail .top { flex-wrap:wrap; gap:8px; }body[data-view="map"] .detail .pic img { width:auto!important; max-width:100%; max-height:40dvh; }body[data-view="map"] .detail figure { min-height:100px; }
 body[data-view="map"] .detail .info { font-size:10px; }.detail .arrows { flex-wrap:wrap; }
 #action-status { position:fixed; bottom:12px; left:50%; transform:translateX(-50%); z-index:2500; background:var(--tile); padding:8px 12px; border:1px solid #555; border-radius:5px; }#action-status:empty { display:none; }
-@media(max-width:800px){.map-results { left:8px; bottom:40px; width:calc(100vw - 16px); max-height:25dvh; }.map-thumbnails { grid-template-columns:repeat(auto-fill,minmax(85px,1fr)); }.object-layers { max-height:48dvh; }body[data-view="map"] .detail { inset:auto 8px 35px; width:auto; max-height:65dvh; }body[data-view="map"] .detail .pic img { max-height:30dvh; }.results-heading { padding:7px; }body[data-view="map"] .detail .info .t { font-size:13px; }}
+@media(max-width:800px){.map-results { left:8px; bottom:40px; width:calc(100vw - 16px); max-height:25dvh; }.map-thumbnails { grid-template-columns:repeat(auto-fill,minmax(85px,1fr)); }body[data-view="map"] .detail { inset:auto 8px 35px; width:auto; max-height:65dvh; }body[data-view="map"] .detail .pic img { max-height:30dvh; }.results-heading { padding:7px; }body[data-view="map"] .detail .info .t { font-size:13px; }}
+
+.browse-tools { position:relative; z-index:1100; display:flex; align-items:center; gap:12px; padding:8px 16px; border-bottom:1px solid var(--line); flex:none; }
+.browse-tools button,.object-layers > summary { font:inherit; color:var(--fg); background:var(--tile); border:1px solid #444; border-radius:4px; padding:7px 10px; cursor:pointer; }
+.object-layers { flex:none; }.object-layers > summary { color:var(--amber); }
+.filter-panel { position:absolute; left:16px; top:calc(100% + 8px); width:330px; max-height:calc(100dvh - 155px); overflow:auto; z-index:900; border:1px solid #444; border-radius:6px; background:#101216; box-shadow:0 8px 24px #0008; }
+.filter-heading { display:flex; align-items:center; gap:8px; padding:12px 14px; }.filter-heading b { flex:1; font-weight:500; }.filter-heading button { font-size:10px; }
+.filter-section { border-top:1px solid var(--line); margin-top:8px; }.filter-section > summary { color:#aaa59b; }
+.layer-heading { align-items:center; gap:8px; padding-top:6px; }.layer-heading span { flex:1; }.layer-heading button { background:none; border:0; padding:0; font-size:10px; }
+.layer-option { min-height:34px; }.year-inputs { display:flex; gap:12px; margin-bottom:12px; }.year-inputs label { flex:1; }.year-inputs input { display:block; width:100%; margin-top:4px; padding:7px; background:var(--bg); color:var(--fg); border:1px solid #555; border-radius:4px; font:inherit; }
+.filter-summary { color:#aaa59b; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; min-width:0; }.browse-actions { display:flex; gap:8px; margin-left:auto; }
+body[data-view="map"] #shuffle { display:none; }body[data-view="map"] #focus-results { display:none; }
+@media(max-width:600px){ .browse-tools { padding:8px; gap:8px; flex-wrap:wrap; }.browse-actions { gap:5px; }.browse-tools button { font-size:10px; padding:7px; }.filter-summary { order:3; flex-basis:100%; font-size:10px; }.filter-panel { left:8px; width:min(330px,calc(100vw - 16px)); max-height:calc(100dvh - 190px); } }
 </style>
 </head>
 <body data-view="map">
@@ -108,36 +120,51 @@ body[data-view="map"] .detail .info { font-size:10px; }.detail .arrows { flex-wr
   <nav aria-label="View">
     <button id="v-map" aria-pressed="true">Map</button>
     <button id="v-wall" aria-pressed="false">Wall</button>
-    <button id="shuffle">Shuffle</button><button id="share">Share view</button><a href="method.html">Method</a><button id="language" aria-label="Change language">ES</button>
+    <a href="method.html">Method</a><button id="language" aria-label="Change language">ES</button>
   </nav>
 </header>
+<div class="browse-tools">
+  <details class="object-layers" id="object-layers">
+    <summary id="layer-summary">Filters</summary>
+    <div class="filter-panel">
+      <div class="filter-heading"><b>Filters</b><button id="reset-filters">Reset filters</button><button id="filters-close" aria-label="Close filters">✕</button></div>
+      <div class="layer-search"><label for="object-search">Search text</label><input id="object-search" type="search" placeholder="Street or shop name…">
+        <label for="barrio-filter">Barrio</label><select id="barrio-filter" disabled><option value="">All barrios</option></select>
+        <span id="barrio-status" role="status"></span>
+      </div>
+      <div class="layer-heading"><span>Categories</span><button id="layers-all">Select all</button><button id="layers-none">Clear all</button></div>
+      <div id="layer-options"></div>
+      <details class="filter-section"><summary>Date and source</summary>
+        <div class="layer-search"><label for="source-filter">Image source</label><select id="source-filter"><option value="">Both sources</option><option value="apple">Apple Look Around</option><option value="gsv">Google Street View</option></select></div>
+        <fieldset class="capture-filter"><legend>Capture year</legend>
+          <div class="year-inputs"><label>From <input id="year-from" type="number" aria-label="Earliest capture year" step="1"></label><label>To <input id="year-to" type="number" aria-label="Latest capture year" step="1"></label></div>
+          <div hidden><output id="year-from-value"></output><output id="year-to-value"></output></div>
+          <label><input id="date-unknown" type="checkbox" checked> Include unknown dates</label>
+        </fieldset>
+      </details>
+      <details class="filter-section"><summary>Display options</summary>
+        <div class="layer-search"><label class="inline-control"><input id="group-duplicates" type="checkbox" checked> Group duplicate observations</label><label class="inline-control"><input id="area-filter" type="checkbox"> Only this map area</label></div>
 <div class="cluster-controls" id="cluster-controls" hidden>
   <label><input type="checkbox" id="cluster-colors"> Cluster colors</label>
   <label>Group <select id="cluster-filter"><option value="">All signs</option><option value="unassigned">Not clustered</option></select></label>
   <span id="cluster-coverage"></span>
 </div>
 
-<details class="object-layers" id="object-layers" open>
-  <summary id="layer-summary">Object layers</summary>
-  <label class="group-control" style="display:block;padding:0 14px 12px"><input id="group-duplicates" type="checkbox" checked> Group duplicate observations</label><div class="layer-search"><input id="object-search" aria-label="Search text" type="search" placeholder="Street or shop name…"><button id="focus-results">Show results on map</button></div>
-  <div class="layer-search">
-    <label for="barrio-filter">Barrio</label><select id="barrio-filter" disabled><option value="">All barrios</option></select>
-    <span id="barrio-status" role="status"></span>
-    <label for="source-filter">Image source</label><select id="source-filter"><option value="">Both sources</option><option value="apple">Apple Look Around</option><option value="gsv">Google Street View</option></select>
-    <label class="inline-control"><input id="area-filter" type="checkbox"> Only this map area</label>
-    <button id="reset-filters">Reset filters</button>
-  </div>
-  <fieldset class="capture-filter"><legend>Capture year</legend><div class="year-values"><output id="year-from-value" for="year-from"></output><output id="year-to-value" for="year-to"></output></div><div class="year-slider"><input id="year-from" type="range" aria-label="Earliest capture year" step="1"><input id="year-to" type="range" aria-label="Latest capture year" step="1"></div><label><input id="date-unknown" type="checkbox" checked> Include unknown dates</label></fieldset>
-  <div class="snapshot-update"><button id="snapshot-update" hidden>New data available · Update</button><span id="update-status" role="status"></span></div>
-  <div class="layer-heading"><button id="layers-all">Select all</button><button id="layers-none">Clear all</button></div>
-  <div id="layer-options"></div>
-  <p id="layer-error" role="status"></p>
+      </details>
+      <details class="filter-section"><summary>Download selection</summary>
   <fieldset class="capture-filter downloads"><legend>Download selection</legend>
     <label for="download-format">Format</label><select id="download-format"><option value="csv">CSV</option><option value="geojson">GeoJSON</option><option value="jsonl">JSONL</option></select>
     <button id="download-data" disabled>Download data</button><button id="download-manifest" disabled>Manifest</button>
     <span id="download-summary" role="status"></span>
   </fieldset>
-</details>
+      </details>
+      <div class="snapshot-update"><button id="snapshot-update" hidden>New data available · Update</button><span id="update-status" role="status"></span></div>
+      <p id="layer-error" role="status"></p>
+    </div>
+  </details>
+  <span id="filter-summary" class="filter-summary"></span>
+  <div class="browse-actions"><button id="focus-results">Show on map</button><button id="shuffle">Shuffle wall</button><button id="share">Copy link</button></div>
+</div>
 <div id="map"></div><div id="map-status" hidden></div>
 <section id="map-results" class="map-results" aria-label="Objects in map area">
   <div class="results-heading"><span id="results-title">In this area</span><button id="results-clear" hidden>Back to area</button><button id="results-toggle" aria-expanded="true">Hide</button></div>
@@ -177,6 +204,6 @@ body[data-view="map"] .detail .info { font-size:10px; }.detail .arrows { flex-wr
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="crop-storage.js"></script>
-<script src="app.js?v=16324e980a74"></script>
+<script src="app.js?v=b26a98a6891e"></script>
 </body>
 </html>
