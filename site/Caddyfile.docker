@@ -1,0 +1,18 @@
+# Container variant of Caddyfile for compose.yaml; upstreams are compose services.
+{
+	auto_https off
+	admin off
+}
+
+http://:8790 {
+	root * {$TYPOLOGY_SITE_ROOT}
+	encode zstd gzip
+	reverse_proxy /api/graffiti/* host.docker.internal:8797
+	reverse_proxy /api/* object-api:8794
+	reverse_proxy /proposal-context/* proposal-context:8793
+	file_server
+	@assets path /img/* /ctx/* /proposal-assets/*
+	header @assets Cache-Control "public, max-age=604800"
+	header /data.json Cache-Control "public, max-age=300"
+	header /app.js Cache-Control "no-cache"
+}

@@ -1,0 +1,54 @@
+# Viewer stack: caddy on 127.0.0.1:8790, APIs only on the compose network.
+# Crop symlinks and result.json source paths are absolute under both data paths:
+# caddy gets both mounts; the API image symlinks the repo path so resolve() matches the host.
+name: typology
+
+services:
+  site:
+    image: caddy:2.10.2
+    command: caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+    user: "1000:1000"
+    env_file: ${HOME}/.config/typology-machine/deployment.env
+    environment:
+      XDG_CONFIG_HOME: /tmp
+      XDG_DATA_HOME: /tmp
+    ports: ["127.0.0.1:8790:8790"]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    volumes:
+      - ./site/Caddyfile.docker:/etc/caddy/Caddyfile:ro
+      - /mnt/data/projects/typology-machine/data:/mnt/data/projects/typology-machine/data:ro
+      - /mnt/data/projects/typology-machine/data:/home/mateo/projects/typology-machine/data:ro
+    depends_on: [object-api, proposal-context]
+    restart: unless-stopped
+
+  object-api:
+    build: .
+    image: typology-machine:local
+    command: python -u explore/object_api.py serve --host 0.0.0.0 --state /state/query
+    env_file: ${HOME}/.config/typology-machine/deployment.env
+    volumes:
+      - /mnt/data/projects/typology-machine/data:/mnt/data/projects/typology-machine/data:ro
+      - ${HOME}/.local/state/typology-machine/query:/state/query:ro
+      - ${HOME}/.local/state/typology-machine/thumbs:/state/thumbs
+    restart: unless-stopped
+
+  proposal-context:
+    image: typology-machine:local
+    command: python -u explore/proposal_context.py --host 0.0.0.0 --port 8793 --decoders 1
+    env_file: ${HOME}/.config/typology-machine/deployment.env
+    environment:
+      OPENBLAS_NUM_THREADS: 1
+      OMP_NUM_THREADS: 1
+    cpu_shares: 512
+    volumes:
+      - /mnt/data/projects/typology-machine/data:/mnt/data/projects/typology-machine/data:ro
+      - /mnt/data/projects/typology-machine/data/coruna/proposal_context_cache:/mnt/data/projects/typology-machine/data/coruna/proposal_context_cache
+    depends_on: [object-api]
+    restart: unless-stopped
+
+# Docker's default address pools are exhausted on this host; pin a small free subnet.
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.16.79.0/28
