@@ -9,6 +9,7 @@ import hashlib
 import json
 import math
 from pathlib import Path
+import shutil
 import sqlite3
 
 import numpy as np
@@ -43,12 +44,36 @@ def prepare(args):
         WHERE o.category='graffiti' AND o.score>=? ORDER BY o.score DESC,o.quality DESC,o.id''', (args.confidence,)).fetchall()
     db.close()
     selected, hashes, groups, panoramas = [], [], set(), set()
+    original_train, original_validation, inherited_exclusions = [], [], []
+    parent_summary = None
+    if getattr(args, 'expand_from', None):
+        from publish_huggingface import validate_reviewed_dataset
+        parent_summary, parent_rows = validate_reviewed_dataset(args.expand_from)
+        if args.train < len(parent_rows['train']) or args.validation < len(parent_rows['validation']):
+            raise ValueError('Expanded split targets must retain every reviewed source image')
+        for split, records in parent_rows.items():
+            for row in records:
+                item = dict(row)
+                path = args.expand_from / split / row['file_name']
+                with Image.open(path) as image:
+                    item['_image'] = image.convert('RGB').copy()
+                item['_original_path'] = path
+                selected.append(item)
+                (original_train if split == 'train' else original_validation).append(item)
+                hashes.append(int(item['phash'], 16)); groups.add(item['group_id']); panoramas.add(item['panorama_id'])
+        exclusion_path = args.expand_from / 'review-exclusions.json'
+        if exclusion_path.exists():
+            inherited_exclusions = json.loads(exclusion_path.read_text())
+    inherited_ids = {item['id'] for item in selected}
+    excluded_ids = {item['id'] for item in inherited_exclusions}
     rejections = {}
     def reject(reason):
         rejections[reason] = rejections.get(reason, 0) + 1
     target = args.train + args.validation
     for payload, group in rows:
         item = json.loads(payload)
+        if item['id'] in inherited_ids or item['id'] in excluded_ids:
+            reject('previously_reviewed'); continue
         panorama = item['source'] + ':' + item['view_id'].rsplit('_', 1)[0]
         if group in groups or panorama in panoramas:
             reject('same_group_or_panorama'); continue
@@ -80,13 +105,18 @@ def prepare(args):
         if len(selected) >= target * 3:
             break
     # Hold out geographically separated camera locations, then exclude nearby train crops.
-    validation, train = [], []
-    for item in selected:
-        if len(validation) < args.validation and all(distance(item, other) >= 150 for other in validation):
+    validation, train = list(original_validation), list(original_train)
+    candidates = [item for item in selected if item['id'] not in inherited_ids]
+    for item in candidates:
+        if (len(validation) < args.validation and all(distance(item, other) >= 150 for other in validation)
+                and all(distance(item, other) >= 100 for other in original_train)):
             validation.append(item)
-    for item in selected:
-        if item in validation:
+    validation_ids = {item['id'] for item in validation}
+    for item in candidates:
+        if item['id'] in validation_ids:
             continue
+        if len(train) >= args.train:
+            break
         if any(distance(item, other) < 100 for other in validation):
             reject('validation_distance_buffer'); continue
         train.append(item)
@@ -97,10 +127,13 @@ def prepare(args):
         directory = output / split; directory.mkdir(parents=True, exist_ok=True)
         lines = []
         for number, item in enumerate(items):
-            filename = hashlib.sha256(item['id'].encode()).hexdigest()[:20] + '.jpg'
-            item['_image'].save(directory / filename, quality=93)
-            row = {k: v for k, v in item.items() if k != '_image'}
-            row.update(file_name=filename, text=CAPTION)
+            filename = item.get('file_name') or hashlib.sha256(item['id'].encode()).hexdigest()[:20] + '.jpg'
+            if '_original_path' in item:
+                shutil.copyfile(item['_original_path'], directory / filename)
+            else:
+                item['_image'].save(directory / filename, quality=93)
+            row = {k: v for k, v in item.items() if not k.startswith('_')}
+            row.update(file_name=filename, text=item.get('text', CAPTION))
             lines.append(json.dumps(row, ensure_ascii=False))
         (directory / 'metadata.jsonl').write_text('\n'.join(lines)+'\n')
         # Review every image in numbered pages, not only the first few attractive samples.
@@ -121,8 +154,14 @@ def prepare(args):
         limitations=['Machine-selected graffiti proposals can include wrong categories, people or signs.',
                     'Camera coordinates, existing groups and perceptual hashes reduce duplication but cannot guarantee distinct artworks.',
                     'All accepted crops need contact-sheet review before training.'])
+    if parent_summary:
+        summary['expanded_from'] = {'snapshot': parent_summary['snapshot'],
+            'manifest_sha256': parent_summary['manifest_sha256'],
+            'train': len(original_train), 'validation': len(original_validation)}
+        summary['inherited_reviewed_ids'] = sorted(inherited_ids)
+        (output / 'review-exclusions.json').write_text(json.dumps(inherited_exclusions, indent=2)+'\n')
     (output / 'summary.json').write_text(json.dumps(summary, indent=2)+'\n')
-    print(json.dumps(summary, indent=2))
+    print(json.dumps({k: v for k, v in summary.items() if k != 'inherited_reviewed_ids'}, indent=2))
 
 
 if __name__ == '__main__':
@@ -134,7 +173,8 @@ if __name__ == '__main__':
     parser.add_argument('--spacing', type=float, default=20)
     parser.add_argument('--train', type=int, default=256)
     parser.add_argument('--validation', type=int, default=32)
+    parser.add_argument('--expand-from', type=Path, help='Preserve all reviewed source images and their split assignments')
     arguments = parser.parse_args()
-    if not 1 <= arguments.train <= 512 or not 1 <= arguments.validation <= 128:
-        parser.error('Train must be 1–512 and validation 1–128')
+    if not 1 <= arguments.train <= 4096 or not 1 <= arguments.validation <= 256:
+        parser.error('Train must be 1–4096 and validation 1–256')
     prepare(arguments)

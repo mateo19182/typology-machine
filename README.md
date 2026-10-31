@@ -13,16 +13,16 @@ of the filtered records. Detections and OCR are experimental, not verified label
 
 ## Experiments
 
-[Open the experiments](https://typology.m19182.dev/experiments.html):
+Linked from the site header:
 
 - **Visual wandering** follows saved visual matches between real street photos, holding the detected object at a fixed screen position during each crossfade. The graph samples up to 15,000 objects, rejects weak and differently proportioned matches, and offers shape or shape-and-colour browsing. Reliable local feature matches refine rotation, scale and position; other pairs use centred object boxes. No model runs while browsing.
 - **Coruña alphabet** composes text from an editable starter of recognized letters on real signs. [Alphabet setup and limitations](docs/alphabet.md).
 - **Living typology book** creates printable A4 contact sheets with category, date, source and neighbourhood filters, editable captions, object links and PDF output through browser print.
-- **Graffiti generator** runs a local SD 1.5 LoRA trained on 225 selected crops, with 29 held out. This is an early experiment, not an established quality improvement. [Training and serving](docs/graffiti.md).
+- **Graffiti generator** runs distilled FLUX.2 klein 4B in four steps with a persistent worker and a Coruña LoRA trained on Base 4B for 2,000 steps on 971 individually captioned crops, with 92 held out. Prompts are passed through without a city-name prefix. Compare the model and adapter by changing archive influence. [Training, captioning and serving](docs/graffiti.md).
 
 Private [Hugging Face datasets and model exports](docs/huggingface.md) preserve the
-archive metadata and reviewed graffiti training run. A separate FLUX.2 klein Base
-4B training plan is prepared for the next graffiti experiment.
+archive metadata, reviewed graffiti datasets and the completed SD 1.5 and FLUX.2
+adapters.
 
 Build the wandering graph from an existing query index and locally cached DINOv2 model:
 

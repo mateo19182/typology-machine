@@ -2,28 +2,42 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Graffiti study · Typology Machine</title>
-<link rel="icon" href="favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="graffiti.css?v=15ac92b90367">
-<script defer src="graffiti.js?v=0b4fccae378c"></script>
+<title>Graffiti · Typology Machine</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="graffiti.css?v=b0fc6845dda9">
+<script defer src="graffiti.js?v=59a8f7c10c17"></script>
 </head>
 <body>
-<header><a href="experiments.html">← Typology Machine · Experiments</a><span>04 / Graffiti study</span></header>
+<header><a class="mast" href="index.html">Typology Machine</a><nav aria-label="Site"><a href="index.html">Map</a><a href="alphabet.html">Alphabet</a><a href="book.html">Book</a><a href="graffiti.html" aria-current="page">Graffiti</a><a href="method.html">Method</a></nav></header>
 <main>
-<div class="intro"><h1>Imagine another wall.</h1><p>A small image model experiment, fine-tuned on graffiti from the city archive.</p></div>
+<div class="intro"><h1>Graffiti</h1><p><a href="https://huggingface.co/mateo-19182/coruna-graffiti-flux2-klein-captioned-lora" target="_blank" rel="noopener">FLUX.2 klein 4B + Coruña graffitiLoRA.</a> <a href="https://huggingface.co/datasets/mateo-19182/coruna-graffiti-captioned-v3" target="_blank" rel="noopener">Dataset ↗</a></p></div>
 <div class="studio">
 <form id="controls" aria-label="Image generation controls">
-<label>Describe the piece<textarea id="prompt" name="prompt" maxlength="500" rows="5" required>Abstract blue and coral lettering, weathered concrete, daylight</textarea></label>
-<label>Archive influence<select id="strength" name="strength"><option value="0">Base model only</option><option value="0.4">Light · 0.4</option><option value="0.8" selected>Medium · 0.8</option><option value="1.2">Strong · 1.2</option></select></label>
+<label>Describe the piece<textarea id="prompt" name="prompt" maxlength="500" rows="5" required>A close-up photograph of bold red and white bubble-letter graffiti with black outlines on a weathered corrugated metal shutter, layered paint and faded tags.</textarea></label>
+<label>Archive influence<select id="strength" name="strength"><option value="0">Base model only</option><option value="0.4">Light · 0.4</option><option value="0.8">Medium · 0.8</option><option value="1.2" selected>Strong · 1.2</option></select></label>
 <label>Seed<input id="seed" name="seed" type="number" min="0" max="2147483647" step="1" value="19182" inputmode="numeric"></label>
 <button id="generate" type="submit" class="primary" disabled>Checking model…</button>
+<div id="generation-progress" hidden>
+<progress id="drawing-progress" max="4" aria-label="Image drawing steps"></progress>
+</div>
 <button id="variation" type="button">New seed ↗</button>
 <div class="actions"><a id="download" class="button" hidden download="graffiti-study.png">Save PNG</a><button id="share" type="button">Copy settings</button></div>
 <p id="status" role="status" aria-live="polite">Connecting to the image model…</p>
 </form>
-<section class="preview" aria-label="Generated image"><div id="empty"><span class="empty-title">A new piece starts here.</span><p id="model-status">Loading training status…</p></div><img id="art" alt="AI-generated graffiti study" hidden><div class="caption"><span id="caption">Generated images are imagined works.</span><span>512 × 512</span></div></section>
+<section class="preview" aria-label="Generated image"><div id="empty"></div><img id="art" alt="AI-generated graffiti study" hidden><div class="caption"><span id="caption"></span><span>512 × 512</span></div></section>
 </div>
-<p class="note">Imagined graffiti, trained on the Coruña archive. Lettering may be inaccurate.</p>
-<details class="note"><summary>About the model</summary><p>Currently running Stable Diffusion 1.5 with a Coruña LoRA. To compare the base model with the fine-tune, keep the prompt and seed fixed and change Archive influence.</p></details>
+<details class="note"><summary>About the model</summary><p>Keep the prompt and seed fixed and change Archive influence to compare the base model with the fine-tune.</p></details>
+<section class="library" aria-labelledby="library-title">
+<div class="library-heading"><h2 id="library-title">Library</h2><span id="library-count"></span></div>
+<p id="library-empty" role="status">Loading past generations…</p>
+<div id="library-grid"></div>
+<button id="library-more" type="button" hidden>Show more</button>
+</section>
+<dialog id="library-viewer" aria-labelledby="viewer-title">
+<div class="viewer-heading"><h2 id="viewer-title">Generation</h2><button id="viewer-close" type="button" aria-label="Close image">×</button></div>
+<img id="viewer-image" alt="Past AI-generated graffiti study">
+<p id="viewer-prompt" hidden></p><p id="viewer-meta" hidden></p>
+<div class="viewer-actions"><a id="viewer-download" class="button" download="graffiti-study.png">Save PNG</a><button id="viewer-reuse" type="button" hidden>Use settings</button></div>
+</dialog>
 </main>
 </body>
 </html>

@@ -26,7 +26,7 @@
     'Reload the page to retry.':'Recarga la página para reintentar.',
     'Some selected layers failed to load. Retry before downloading.':'Algunas capas no se cargaron. Reinténtalo antes de descargar.'
   });
-  Object.assign(translations, {'Experiments':'Experimentos','Minimum confidence':'Confianza mínima','Show on map':'Ver en mapa','Filters':'Filtros','Categories':'Categorías','Date and source':'Fecha y fuente','Display options':'Opciones de visualización','From':'Desde','To':'Hasta','Close filters':'Cerrar filtros','Shuffle wall':'Mezclar galería','Copy link':'Copiar enlace','Capture date known':'Fecha de captura conocida','All dates':'Todas las fechas','No categories':'Sin categorías'});
+  Object.assign(translations, {'Experiments':'Experimentos','Alphabet':'Alfabeto','Book':'Libro','Minimum confidence':'Confianza mínima','Show on map':'Ver en mapa','Filters':'Filtros','Categories':'Categorías','Date and source':'Fecha y fuente','Display options':'Opciones de visualización','From':'Desde','To':'Hasta','Close filters':'Cerrar filtros','Shuffle wall':'Mezclar galería','Copy link':'Copiar enlace','Capture date known':'Fecha de captura conocida','All dates':'Todas las fechas','No categories':'Sin categorías'});
   const t=value=>language==='es'?(translations[value]||value):value;
   document.documentElement.lang=language;
   // Translate interface nodes only; detected text and provider metadata stay original.
@@ -333,7 +333,7 @@
     $('year-from').value=from>=1900?from:$('year-from').min;$('year-to').value=to>=1900?to:$('year-to').max;
     if(Number($('year-from').value)>Number($('year-to').value))$('year-to').value=$('year-from').value;yearLabels();
     enabled.clear();
-    const defaults=manifest?['graffiti','street_name_plate']:['store_sign'];
+    const defaults=manifest?['graffiti']:['store_sign'];
     for(const id of (p.has('layers')?p.get('layers').split(','):defaults))if(categories.has(id))enabled.add(id);
     document.querySelectorAll('[data-category]').forEach(input=>input.checked=enabled.has(input.dataset.category));
     const lat=Number(p.get('lat')),lon=Number(p.get('lon')),zoom=Number(p.get('z'));
@@ -487,7 +487,7 @@
   let searchTimer;$('object-search').oninput=()=>{clearTimeout(searchTimer);searchTimer=setTimeout(changeFilters,200);};
   $('focus-results').onclick=()=>{if(!result?.bounds)return;const [w,s,e,n]=result.bounds;setView('map');map.fitBounds([[s,w],[n,e]],{padding:[40,40],maxZoom:18});};
   $('reset-filters').onclick=()=>{
-    enabled.clear();for(const id of ['graffiti','street_name_plate'])if(categories.has(id))enabled.add(id);
+    enabled.clear();if(categories.has('graffiti'))enabled.add('graffiti');
     document.querySelectorAll('[data-category]').forEach(input=>input.checked=enabled.has(input.dataset.category));
     $('group-duplicates').checked=true;$('cluster-colors').checked=false;$('map-previews').checked=true;shuffleSeed=0;
     $('confidence-filter').value='0.65';$('object-search').value='';$('barrio-filter').value='';$('source-filter').value='';$('area-filter').checked=false;$('date-unknown').checked=true;

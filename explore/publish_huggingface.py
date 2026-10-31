@@ -68,7 +68,7 @@ def package_directory(output):
 def finish_package(directory, kind, **provenance):
     files = {}
     for path in sorted(directory.rglob('*')):
-        if path.is_file():
+        if path.is_file() and path != directory / 'package.json':
             files[path.relative_to(directory).as_posix()] = {'sha256': sha256(path), 'bytes': path.stat().st_size}
     write_json(directory / 'package.json', {
         'schema_version': 1, 'kind': kind,
@@ -144,6 +144,9 @@ def export_graffiti(dataset, output):
         exclusions = dataset / 'review-exclusions.json'
         if exclusions.exists():
             shutil.copyfile(exclusions, directory / exclusions.name)
+        review = dataset / 'review.json'
+        if review.exists():
+            shutil.copyfile(review, directory / review.name)
         (directory / 'README.md').write_text(f'''---
 language: [en]
 task_categories: [text-to-image]
@@ -176,8 +179,8 @@ The preparation script rejects small, flat, soft and repeated crops, then buffer
 training cameras at least {summary['validation_buffer_metres']} metres from validation cameras.
 {summary.get('review_method', 'The source dataset has been marked reviewed.')}
 Manifest and image checksums are in `summary.json` and `package.json`.
-All images currently share a generic caption. More descriptive, individually
-reviewed captions would help a future FLUX run.
+Caption strategy: {summary.get('caption_strategy', 'shared generic caption')}.
+{('Descriptions were generated per image; uncertain lettering is retained separately and excluded from training captions.' if summary.get('caption_strategy') else 'All images share a generic caption. More descriptive, individually reviewed captions would help a future FLUX run.')}
 
 ## Limitations and rights
 
@@ -353,8 +356,27 @@ def export_model(home, output, dataset_repo, dataset_revision=None):
         exported_training = {k: training[k] for k in allowed if k in training}
         if training.get('recipe'):
             exported_training['recipe'] = {k: training['recipe'][k] for k in
-                ('diffusers_revision', 'trainer', 'quantization', 'evaluation', 'dataset_manifest_sha256')
+                ('diffusers_revision', 'trainer', 'quantization', 'evaluation', 'dataset_manifest_sha256',
+                 'caption_strategy', 'text_max_sequence_length', 'caption_dropout')
                 if k in training['recipe']}
+            command = training['recipe'].get('command', [])
+            numeric_flags = {'learning_rate': float, 'train_batch_size': int,
+                'gradient_accumulation_steps': int, 'lr_warmup_steps': int,
+                'checkpointing_steps': int, 'checkpoints_total_limit': int,
+                'max_sequence_length': int, 'caption_dropout': float}
+            parameters = {}
+            for name, convert in numeric_flags.items():
+                flag = '--' + name
+                if flag in command:
+                    parameters[name] = convert(command[command.index(flag) + 1])
+            for name in ('mixed_precision', 'lr_scheduler'):
+                flag = '--' + name
+                if flag in command:
+                    parameters[name] = command[command.index(flag) + 1]
+            for name in ('gradient_checkpointing', 'cache_latents', 'offload',
+                         'use_8bit_adam', 'use_aspect_ratio_buckets', 'skip_final_inference'):
+                parameters[name] = '--' + name in command
+            exported_training['recipe']['parameters'] = parameters
         recorded_hashes = training.get('dataset_manifest_sha256')
         if recorded_hashes and recorded_hashes != summary['manifest_sha256']:
             raise ValueError('Reviewed dataset differs from the recorded training manifests')
@@ -363,14 +385,33 @@ def export_model(home, output, dataset_repo, dataset_revision=None):
                       'dataset_snapshot': summary['snapshot'], 'manifest_sha256': summary['manifest_sha256'],
                       'model': model, 'model_revision': training['revision']}
         write_json(directory / 'provenance.json', provenance)
-        for name in ('base-sample.png', 'lora-sample.png'):
+        for name in ('base-sample.png', 'lora-sample.png', 'evaluation-comparison.jpg', 'evaluation.json', 'metrics.json'):
             if (home / name).is_file():
                 shutil.copyfile(home / name, directory / name)
+        if (home / 'evaluation.json').is_file():
+            report = read_json(home / 'evaluation.json')
+            for sample in report['samples']:
+                name = sample['file_name']
+                if not re.fullmatch(r'[1-9][0-9]*-(?:base|lora)\.png', name):
+                    raise ValueError('Unsafe evaluation image name')
+                source = safe_file(home / 'evaluation', name)
+                (directory / 'evaluation').mkdir(exist_ok=True)
+                shutil.copyfile(source, directory / 'evaluation' / name)
         before, after = training.get('validation_loss_before'), training.get('validation_loss_after')
         evaluation = (f'Held-out denoising loss changed from {before:.6f} to {after:.6f}. '
                       'This does not establish better visual quality.' if before is not None and after is not None
                       else 'No held-out quality metric is reported for this run.')
         variant = ', variant="fp16"' if pipeline == 'StableDiffusionPipeline' else ''
+        inference_dtype = 'float16' if pipeline == 'StableDiffusionPipeline' else 'bfloat16'
+        per_image = training.get('recipe', {}).get('caption_strategy') == 'per-image captions'
+        prompt_advice = ('Use ordinary descriptive prompts. This run has no special trigger word; unverified lettering '
+                         'was excluded from its individual training captions.' if per_image
+                         else 'Use the trigger `c0runa graffiti` in prompts.')
+        prompt_example = ('blue graffiti lettering on a concrete wall' if per_image
+                          else 'a photograph of c0runa graffiti, blue lettering on a concrete wall')
+        example_options = (f", height=512, width=512, num_inference_steps=30, guidance_scale=4.0, "
+                           f"max_sequence_length={training.get('recipe', {}).get('text_max_sequence_length', 512)}"
+                           if pipeline == 'Flux2KleinPipeline' else '')
         (directory / 'README.md').write_text(f'''---
 license: {license_name}
 base_model: {model}
@@ -386,7 +427,7 @@ tags: [lora, typology-machine, coruna, graffiti]
 A small experimental adapter trained on {summary['train']} reviewed graffiti crops,
 with {summary['validation']} held out. The base model is `{model}` at revision
 `{training['revision']}`. This repository contains adapter weights, not the base model.
-Use the trigger `c0runa graffiti` in prompts.
+{prompt_advice}
 
 ## Training and evaluation
 
@@ -405,11 +446,11 @@ import torch
 from diffusers import {pipeline}
 pipe = {pipeline}.from_pretrained(
     "{model}", revision="{training['revision']}",
-    torch_dtype=torch.float16{variant},
+    torch_dtype=torch.{inference_dtype}{variant},
 )
 pipe.load_lora_weights("YOUR_NAMESPACE/YOUR_REPOSITORY", token=True)
 pipe.enable_model_cpu_offload()
-image = pipe("a photograph of c0runa graffiti, blue lettering on a concrete wall").images[0]
+image = pipe("{prompt_example}"{example_options}).images[0]
 ```
 
 ## Limitations and rights
@@ -426,7 +467,7 @@ Project: https://github.com/mateo19182/typology-machine
 
 
 def upload_package(directory, repo_id, public=False):
-    from huggingface_hub import HfApi, CommitOperationAdd, CommitOperationDelete, hf_hub_download
+    from huggingface_hub import HfApi, hf_hub_download
     from huggingface_hub.errors import RepositoryNotFoundError
     from huggingface_hub.utils import disable_progress_bars
     disable_progress_bars()
@@ -450,11 +491,30 @@ def upload_package(directory, repo_id, public=False):
         if previous.get('kind') != manifest['kind']:
             raise ValueError('Existing repository has a different package kind')
         owned = set(previous['files']) | {'package.json'}
-        if existing - owned:
+        if existing - owned - files:
             raise ValueError('Existing repository has files outside the previous package')
-    operations = [CommitOperationDelete(path_in_repo=name) for name in sorted(existing - files)]
-    operations += [CommitOperationAdd(path_in_repo=name, path_or_fileobj=str(directory / name)) for name in sorted(files)]
-    commit = api.create_commit(repo_id, repo_type=repo_type, operations=operations,
+        # A streamed upload can leave new files committed before its final manifest.
+        # Resume only additions that match this prepared package's content hashes.
+        partial = existing - owned
+        if partial:
+            metadata = {f.rfilename: f for f in api.repo_info(repo_id, repo_type=repo_type,
+                        revision=info.sha, files_metadata=True).siblings}
+            for name in partial:
+                item = metadata[name]
+                local = manifest['files'].get(name)
+                if local is None or item.size != local['bytes']:
+                    raise ValueError(f'Unowned remote file differs from prepared package: {name}')
+                if item.lfs:
+                    matches = item.lfs.sha256 == local['sha256']
+                else:
+                    remote_path = hf_hub_download(repo_id, name, repo_type=repo_type, revision=info.sha)
+                    matches = sha256(Path(remote_path)) == local['sha256']
+                if not matches:
+                    raise ValueError(f'Unowned remote file differs from prepared package: {name}')
+    # The Hub's Xet uploader adapts commit sizes and resumes completed files. A
+    # single create_commit call can time out with thousands of small JPEGs.
+    commit = api.upload_folder(repo_id=repo_id, repo_type=repo_type, folder_path=directory,
+                               allow_patterns=sorted(files), delete_patterns=sorted(existing - files),
                                parent_commit=info.sha,
                                commit_message=f'Export Typology Machine {manifest["kind"]} package')
     # Verify paths, sizes and every LFS content digest against the committed revision.
@@ -473,13 +533,14 @@ def upload_package(directory, repo_id, public=False):
     return receipt
 
 
-def publish_run(home, output, namespace=None, upload=False, public_model=False):
+def publish_run(home, output, namespace=None, upload=False, public_model=False, dataset_repo_id=None):
     if namespace is None:
         from huggingface_hub import HfApi
         namespace = HfApi().whoami()['name']
-    dataset_repo = f'{namespace}/coruna-graffiti-reviewed'
+    settings = read_json(home / 'publishing.json') if (home / 'publishing.json').exists() else {}
+    dataset_repo = dataset_repo_id or settings.get('dataset_repo_id') or f'{namespace}/coruna-graffiti-reviewed'
     model_name = 'sd15' if read_json(home / 'training.json')['model'] == next(iter(MODEL_TYPES)) else 'flux2-klein'
-    model_repo = f'{namespace}/coruna-graffiti-{model_name}-lora'
+    model_repo = settings.get('model_repo_id') or f'{namespace}/coruna-graffiti-{model_name}-lora'
     # Fail before either upload if the complete run cannot be packaged.
     output.mkdir(parents=True, exist_ok=True)
     export_graffiti(home / 'dataset', output / 'dataset')
@@ -508,6 +569,7 @@ def main():
     run.add_argument('--namespace')
     run.add_argument('--upload', action='store_true')
     run.add_argument('--public-model', action='store_true')
+    run.add_argument('--dataset-repo-id', help='Versioned dataset repository; also configurable in HOME/publishing.json')
     upload = commands.add_parser('upload', help='Verify and upload a prepared package')
     upload.add_argument('--package', type=Path, required=True)
     upload.add_argument('--repo-id', required=True)
@@ -517,7 +579,7 @@ def main():
         result = export_archive(args.state, args.site, args.output, args.public_url)
         result = {k: v for k, v in result.items() if k != 'files'}
     elif args.action == 'run':
-        result = publish_run(args.home, args.output, args.namespace, args.upload, args.public_model)
+        result = publish_run(args.home, args.output, args.namespace, args.upload, args.public_model, args.dataset_repo_id)
     else:
         result = upload_package(args.package, args.repo_id, args.public)
     print(json.dumps(result, ensure_ascii=False, indent=2))

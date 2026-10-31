@@ -1,4 +1,4 @@
-"""Small Stable Diffusion LoRA experiment; weights and generated images stay off Git."""
+"""Train the original SD experiment and generate with trained SD or FLUX adapters."""
 from __future__ import annotations
 import argparse
 import gc
@@ -10,6 +10,9 @@ import time
 
 MODEL = 'stable-diffusion-v1-5/stable-diffusion-v1-5'
 REVISION = '451f4fe16113bff5a5d2269ed5ad43b0592e9a14'
+FLUX_MODEL = 'black-forest-labs/FLUX.2-klein-base-4B'
+FLUX_DISTILLED_MODEL = 'black-forest-labs/FLUX.2-klein-4B'
+FLUX_DISTILLED_REVISION = 'e7b7dc27f91deacad38e78976d1f2b499d76a294'
 DEFAULT_HOME = Path(os.environ.get('TYPOLOGY_GRAFFITI_HOME', '/mnt/data/projects/typology-machine/graffiti-ai'))
 
 
@@ -22,6 +25,29 @@ def write_json(path, value):
 
 def model_path(home):
     return home / 'hf/hub/models--stable-diffusion-v1-5--stable-diffusion-v1-5/snapshots' / REVISION
+
+
+def model_settings(home):
+    """Choose the runtime from the completed training record, without GPU imports."""
+    try:
+        state = json.loads((home / 'training.json').read_text())
+    except (OSError, ValueError):
+        state = {}
+    model = state.get('model', MODEL)
+    if model == FLUX_MODEL:
+        settings = {'model': 'FLUX.2 klein Base 4B + Coruña graffitiLoRA', 'model_id': model,
+                    'revision': state.get('revision'), 'resolution': 512, 'steps': 30, 'guidance_scale': 4.0,
+                    'worker_mode': 'fresh', 'max_sequence_length': state.get('recipe', {}).get('text_max_sequence_length', 512)}
+        if (home / 'inference.json').is_file():
+            inference = json.loads((home / 'inference.json').read_text())
+            if inference.get('profile') != 'distilled' or inference.get('revision') != FLUX_DISTILLED_REVISION:
+                raise ValueError('Unsupported graffiti inference profile or revision')
+            settings.update(model='FLUX.2 klein 4B + Coruña graffitiLoRA', model_id=FLUX_DISTILLED_MODEL,
+                            revision=FLUX_DISTILLED_REVISION, steps=4, guidance_scale=1.0, worker_mode='persistent')
+        return settings
+    if model == MODEL:
+        return {'model': 'Stable Diffusion 1.5 + Coruña LoRA', 'model_id': model, 'resolution': 512, 'steps': 24}
+    raise ValueError('Unsupported graffiti base model')
 
 
 def train(home, steps=300, seed=19182):
@@ -105,7 +131,73 @@ def train(home, steps=300, seed=19182):
     report(stage='trained',step=steps,validation_loss_after=after,finished=time.time())
 
 
-def generate(home, prompt, output, seed=19182, strength=.8, use_lora=True):
+def generate(home, prompt, output, seed=19182, strength=.8, use_lora=True, progress=None):
+    settings = model_settings(home)
+    options = {'progress': progress} if progress is not None else {}
+    if settings['model_id'] in (FLUX_MODEL, FLUX_DISTILLED_MODEL):
+        return generate_flux(home, prompt, output, seed, strength, use_lora, **options)
+    return generate_sd15(home, prompt, output, seed, strength, use_lora, **options)
+
+
+def load_flux_pipeline(home, use_lora=True, *, model_id=None, revision=None):
+    import torch
+    from diffusers import BitsAndBytesConfig, Flux2KleinPipeline, Flux2Transformer2DModel
+    from transformers import BitsAndBytesConfig as EncoderBitsAndBytesConfig, Qwen3ForCausalLM
+    torch.set_num_threads(2)
+    settings = model_settings(home)
+    model_id = model_id or settings['model_id']
+    source = {'revision': revision or settings['revision'], 'local_files_only': True, 'torch_dtype': torch.bfloat16}
+    quantization = {'load_in_4bit': True, 'bnb_4bit_quant_type': 'nf4',
+                    'bnb_4bit_use_double_quant': True, 'bnb_4bit_compute_dtype': torch.bfloat16}
+    # Compress both large components so inference can share the 3090 with henad.
+    print('Loading FLUX transformer', flush=True)
+    transformer = Flux2Transformer2DModel.from_pretrained(
+        model_id, subfolder='transformer', quantization_config=BitsAndBytesConfig(**quantization), **source)
+    print('Loading FLUX text encoder', flush=True)
+    encoder = Qwen3ForCausalLM.from_pretrained(
+        model_id, subfolder='text_encoder', quantization_config=EncoderBitsAndBytesConfig(**quantization), **source)
+    pipe = Flux2KleinPipeline.from_pretrained(model_id, transformer=transformer, text_encoder=encoder, **source)
+    if use_lora:
+        pipe.load_lora_weights(str(home / 'lora'), adapter_name='coruna')
+    pipe.enable_model_cpu_offload()
+    pipe.vae.enable_slicing()
+    return pipe
+
+
+def generation_reporter(path, total_steps):
+    def report(phase, completed_steps=0):
+        if path is not None:
+            write_json(path, {'phase': phase, 'completed_steps': completed_steps, 'total_steps': total_steps})
+    def step_end(pipe, index, timestep, values):
+        completed = index + 1
+        report('finishing' if completed == total_steps else 'generating', completed)
+        return values
+    return report, step_end
+
+
+def generate_flux(home, prompt, output, seed=19182, strength=.8, use_lora=True, progress=None, *, pipe=None, settings=None):
+    settings = settings or model_settings(home)
+    report, step_end = generation_reporter(progress, settings['steps'])
+    import torch
+    if pipe is None:
+        report('loading')
+        pipe = load_flux_pipeline(home, use_lora)
+    if use_lora:
+        pipe.set_adapters(['coruna'], adapter_weights=[strength])
+    print('Generating image', flush=True)
+    report('encoding')
+    image = pipe(prompt=prompt,
+                 height=512, width=512, num_inference_steps=settings['steps'], guidance_scale=settings['guidance_scale'],
+                 max_sequence_length=settings['max_sequence_length'],
+                 callback_on_step_end=step_end, callback_on_step_end_tensor_inputs=[],
+                 generator=torch.Generator('cpu').manual_seed(seed)).images[0]
+    output.parent.mkdir(parents=True, exist_ok=True)
+    image.save(output)
+
+
+def generate_sd15(home, prompt, output, seed=19182, strength=.8, use_lora=True, progress=None):
+    report, step_end = generation_reporter(progress, 24)
+    report('loading')
     import torch
     from diffusers import StableDiffusionPipeline, DPMSolverMultistepScheduler
     torch.set_num_threads(2)
@@ -116,7 +208,8 @@ def generate(home, prompt, output, seed=19182, strength=.8, use_lora=True):
         pipe.set_adapters(['coruna'],adapter_weights=[strength])
     pipe.enable_model_cpu_offload()
     pipe.vae.enable_slicing()
-    image=pipe(prompt='a photograph of c0runa graffiti, painted street art on a wall, '+prompt,negative_prompt='blurry, low quality, watermark, signature, people',height=512,width=512,num_inference_steps=24,guidance_scale=7,generator=torch.Generator('cpu').manual_seed(seed)).images[0]
+    report('encoding')
+    image=pipe(prompt='a photograph of c0runa graffiti, painted street art on a wall, '+prompt,negative_prompt='blurry, low quality, watermark, signature, people',height=512,width=512,num_inference_steps=24,guidance_scale=7,callback_on_step_end=step_end,callback_on_step_end_tensor_inputs=[],generator=torch.Generator('cpu').manual_seed(seed)).images[0]
     output.parent.mkdir(parents=True,exist_ok=True)
     image.save(output)
 
@@ -131,6 +224,7 @@ def main():
     parser.add_argument('--strength',type=float,default=.8)
     parser.add_argument('--base',action='store_true')
     parser.add_argument('--output',type=Path)
+    parser.add_argument('--progress',type=Path,help='Write generation phases and completed drawing steps atomically')
     parser.add_argument('--publish',action='store_true',help='Upload the completed adapter and reviewed dataset to private Hugging Face repos')
     parser.add_argument('--namespace',help='Hugging Face namespace; defaults to the authenticated account')
     args=parser.parse_args()
@@ -148,6 +242,6 @@ def main():
             result=publish_run(args.home,args.home/f'hub-{int(time.time())}',args.namespace,upload=True)
             print(json.dumps(result,indent=2))
     else:
-        generate(args.home,args.prompt,args.output or args.home/'sample.png',args.seed,args.strength,not args.base)
+        generate(args.home,args.prompt,args.output or args.home/'sample.png',args.seed,args.strength,not args.base,progress=args.progress)
 
 if __name__=='__main__': main()
