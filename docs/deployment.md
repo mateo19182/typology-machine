@@ -127,7 +127,9 @@ uv run explore/publish_crops_r2.py --activate
 
 The first command counts referenced crops. The second uploads a bounded sample.
 The last resumes a full upload and activates delivery only after public checksum
-checks pass. Upload checkpoints live outside `data`, under
+checks pass. `--verify-listing` compares every checkpointed crop with the bucket
+listing by size (about 1,200 list calls for 1.16M crops) and forgets missing ones,
+so the next upload run re-sends only those. Upload checkpoints live outside `data`, under
 `~/.local/state/typology-machine/r2`. Use a separate `--state` directory for a
 different account or bucket. The hourly timer can publish later additions.
 
@@ -135,3 +137,44 @@ Activation updates the exported `crop-storage.json`. Missing remote crops retry
 locally once. To return to local delivery, stop the uploader and timer and set
 that file to `{"base_url":null}`. Uploaded objects are retained; the uploader does
 not delete bucket contents.
+
+## Cloudflare (typology.m19182.dev)
+
+The public viewer is split three ways:
+
+- **Worker `typology-machine`** (`wrangler.jsonc`, static assets only, no script) serves
+  the HTML/JS/CSS, `barrios.geojson`, `alphabet-data.json`, `wander-data.json`,
+  `crop-storage.json` and the 13.8k legacy context photos in `ctx/`. It is attached as
+  a route `typology.m19182.dev/*`, so static requests never reach this server and do not
+  count as Worker requests.
+- **R2 `typology-crops`** at `https://crops.typology.m19182.dev/crops/v1/` holds every
+  published crop (`img/`, `proposal-assets/`). Its CORS policy
+  (`explore/cloudflare/r2-cors.json`) lets the alphabet page draw crops on a canvas.
+- **This server**, through the existing tunnel rule to Caddy on port 8790, keeps
+  `/api/*` (queries, map cells, exports, thumbnails) and `/proposal-context/*` (full
+  street images decoded from originals). Script-less Worker routes for those paths, and
+  for `/img/*` and `/proposal-assets/*` (the local crop fallback), bypass the Worker.
+
+`layers/` and `data.json` are only inputs for the query index and are not published.
+The graffiti page is excluded and redirects to the map.
+
+Publish after changing `site/` or the exported data:
+
+```sh
+explore/deploy_cloudflare.sh              # or --build-only to stop before any Cloudflare change
+```
+
+It copies changed frontend files into the export, uploads new crops when the layer
+manifest or `data.json` changed, rebuilds `data/coruna/cloudflare-site` (hard-linking
+`ctx/`), ensures the script-less routes and R2 CORS, runs `wrangler deploy`, and smoke
+tests `/` and `/api/meta`. Logs: `~/.local/state/typology-machine/cloudflare/`. The
+Cloudflare token is read from `~/.secrets/cloudflare-pages.env`. Nothing runs it on a
+timer; layer refresh timers are currently not installed, so run it by hand after an
+export. Workers Free allows 20,000 asset files and 25 MiB per file; the script fails
+before deploying if the shell exceeds either.
+
+Rollback to the server-only setup: delete the route `typology.m19182.dev/*` (Workers &
+Pages → typology-machine → Domains & Routes, or the zone routes API). DNS and the tunnel
+rule were not changed, so Caddy serves everything again immediately. Backups of both
+are in `~/.cloudflared/backup-20261031-*`. To stop using R2 crops, set the exported
+`crop-storage.json` to `{"base_url":null}` and redeploy.

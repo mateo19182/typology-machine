@@ -74,6 +74,19 @@ def upload(client, site, bucket, url, previous=None):
     return relative, *signature, sha, True
 
 
+def verify_listing(client, bucket, db):
+    """Compare checkpoints with the bucket listing; forget rows R2 lacks so the next run re-uploads them."""
+    remote = {}
+    for page in client.get_paginator('list_objects_v2').paginate(Bucket=bucket, Prefix=PREFIX + '/'):
+        for item in page.get('Contents', []):
+            remote[item['Key'][len(PREFIX) + 1:]] = item['Size']
+    rows = db.execute('SELECT i.path,u.size FROM inventory i LEFT JOIN uploads u ON i.path=u.path').fetchall()
+    stale = [path for path, size in rows if size is None or remote.get(path) != size]
+    db.executemany('DELETE FROM uploads WHERE path=?', [(path,) for path in stale])
+    db.commit()
+    return {'listed': len(remote), 'inventory': len(rows), 'stale': len(stale), 'stale_sample': stale[:20]}
+
+
 def verify_public(site, sample, public):
     import requests
     if urlsplit(public).scheme != 'https':
@@ -97,6 +110,7 @@ def main():
     parser.add_argument('--workers', type=int, default=8)
     parser.add_argument('--limit', type=int, help='Upload a bounded sample, without activating remote delivery')
     parser.add_argument('--inventory-only', action='store_true')
+    parser.add_argument('--verify-listing', action='store_true', help='Check every crop against the bucket listing by size, then exit')
     parser.add_argument('--activate', action='store_true', help='Enable remote delivery only after a complete upload and public checks')
     args = parser.parse_args()
     from dotenv import load_dotenv
@@ -156,6 +170,12 @@ def main():
                                   aws_secret_access_key=os.environ['AWS_SECRET_ACCESS_KEY'], region_name='auto',
                                   config=Config(max_pool_connections=args.workers, retries={'mode': 'standard', 'max_attempts': 5}))
             client.head_bucket(Bucket=args.bucket)
+            if args.verify_listing:
+                report['listing'] = verify_listing(client, args.bucket, db)
+                report['finished_at'] = time.time()
+                report_path.write_text(json.dumps(report, indent=2))
+                print(json.dumps(report['listing']), flush=True)
+                return
             rows = db.execute('SELECT i.path,u.size,u.mtime_ns,u.sha256 FROM inventory i LEFT JOIN uploads u ON i.path=u.path ORDER BY i.path')
             sample = []
             with ThreadPoolExecutor(max_workers=args.workers) as pool:

@@ -7,6 +7,8 @@ const safeURL = value => { try { const u = new URL(value, location.href); return
 function valid(item) { return item && typeof item.letter === 'string' && [...item.letter].length === 1 && typeof item.image === 'string' && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(item.image) && item.image.length < 500000 && typeof item.id === 'string'; }
 try { const saved = JSON.parse(localStorage.getItem(KEY) || '[]'); if (Array.isArray(saved)) letters = saved.filter(valid).slice(0, 500); } catch {}
 function persist() { try { localStorage.setItem(KEY, JSON.stringify(letters)); return true; } catch { $('save-status').textContent = 'Browser storage is full. Download your alphabet to keep these letters.'; return false; } }
+let storage = CropStorage.create();
+const storageReady = fetch('crop-storage.json').then(r => r.ok ? r.json() : {}).catch(() => ({})).then(config => { storage = CropStorage.create(config); });
 const contextCache = new Map();
 let contextIntent = null, contextTimer = null, contextSerial = 0;
 function closeContext() {
@@ -100,16 +102,19 @@ for (const id of ['left','top','width','height']) $(id).oninput = () => { const 
 async function choose(row) {
   selected = row; sourceImage = null; $('save').disabled = true; $('source').hidden = true; $('save-status').textContent = 'Loading sign…';
   const img = new Image(); img.onload = () => { if (selected !== row) return; sourceImage = img; canvas.width = Math.min(600,img.width); canvas.height = Math.round(canvas.width*img.height/img.width); selection = row.initialRect || [0,0,1,1]; fields(); draw(); $('save').disabled = false; $('save-status').textContent = 'Drag around one letter, enter it below, then save.'; };
-  img.onerror = () => { $('save-status').textContent = 'This crop could not be loaded. Choose another sign.'; };
-  // Same-origin crops keep canvas exports available without depending on remote CORS.
-  img.src = row.crop;
+  const failed = () => { $('save-status').textContent = 'This crop could not be loaded. Choose another sign.'; };
+  await storageReady; if (selected !== row) return;
+  // Canvas export needs CORS; '?cors' keeps those responses in their own edge cache entry. Same-origin is the fallback.
+  const remote = storage.url(row.crop);
+  if (remote === row.crop) { img.onerror = failed; img.src = row.crop; }
+  else { img.crossOrigin = 'anonymous'; img.onerror = () => { img.onerror = failed; img.removeAttribute('crossorigin'); img.src = row.crop; }; img.src = remote + '?cors'; }
   try { const detail = await fetch('/api/object?' + new URLSearchParams({id:row.id,layers:'store_sign,street_name_plate',confidence:'.65'})).then(r => { if (!r.ok) throw Error(); return r.json(); }); if (selected !== row) return; row.source = safeURL(detail.u); $('source').href = row.source; $('source').hidden = !row.source; } catch {}
 }
 async function search(more=false) {
   const generation = ++request; if (!more) { offset = 0; query = $('search').value.trim(); $('results').replaceChildren(); }
   $('more').disabled = true; $('search-status').textContent = 'Finding signs…';
-  try { const res = await fetch('/api/query?' + new URLSearchParams({layers:'store_sign,street_name_plate',confidence:'.65',q:query,limit:'24',offset:String(offset),map:'0'})); if (!res.ok) throw Error(); const data = await res.json(); if (generation !== request) return;
-    for (const row of data.items) { if (!row.crop) continue; const button = document.createElement('button'); button.className = 'sign'; const img = new Image(); img.loading = 'lazy'; img.src = row.crop; img.alt = row.text || row.t || 'Sign'; const caption = document.createElement('span'); caption.textContent = row.text || row.t || 'Untranscribed sign'; button.append(img,caption); button.onclick = () => choose(row); $('results').append(button); }
+  try { const res = await fetch('/api/query?' + new URLSearchParams({layers:'store_sign,street_name_plate',confidence:'.65',q:query,limit:'24',offset:String(offset),map:'0'})); if (!res.ok) throw Error(); const data = await res.json(); await storageReady; if (generation !== request) return;
+    for (const row of data.items) { if (!row.crop) continue; const button = document.createElement('button'); button.className = 'sign'; const img = new Image(); img.loading = 'lazy'; storage.image(img, row.crop); img.alt = row.text || row.t || 'Sign'; const caption = document.createElement('span'); caption.textContent = row.text || row.t || 'Untranscribed sign'; button.append(img,caption); button.onclick = () => choose(row); $('results').append(button); }
     offset += data.items.length; $('more').hidden = !data.has_more; $('search-status').textContent = data.items.length ? 'Choose a sign to collect a letter.' : 'No signs found. Try another word.';
   } catch { if (generation === request) $('search-status').textContent = 'Could not load signs. Please try again.'; } finally { if (generation === request) $('more').disabled = false; }
 }

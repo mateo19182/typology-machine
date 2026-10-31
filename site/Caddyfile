@@ -6,7 +6,6 @@
 http://:8790 {
 	root * {$TYPOLOGY_SITE_ROOT:./data/coruna/site}
 	encode zstd gzip
-	reverse_proxy /api/graffiti/* 127.0.0.1:8797
 	reverse_proxy /api/* 127.0.0.1:8794
 	reverse_proxy /proposal-context/* 127.0.0.1:8793
 	file_server

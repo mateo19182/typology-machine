@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
-from publish_crops_r2 import crop_path, upload, main
+from publish_crops_r2 import crop_path, open_database, upload, main, verify_listing
 
 
 class CropPublicationTests(unittest.TestCase):
@@ -48,6 +48,18 @@ class CropPublicationTests(unittest.TestCase):
             path.write_bytes(b'changed jpeg')
             self.assertTrue(upload(client, site, 'bucket', '/img/a.jpg', result[1:4])[-1])
             self.assertEqual(client.put_object.call_count, 2)
+
+    def test_listing_forgets_missing_or_resized_crops(self):
+        with tempfile.TemporaryDirectory() as folder:
+            db = open_database(Path(folder) / 'uploads.sqlite3')
+            db.executemany('INSERT INTO inventory VALUES (?)', [('img/a.jpg',), ('img/b.jpg',), ('img/c.jpg',), ('img/d.jpg',)])
+            db.executemany('INSERT INTO uploads VALUES (?,?,0,?)', [('img/a.jpg', 4, 'x'), ('img/b.jpg', 4, 'x'), ('img/c.jpg', 4, 'x')])
+            client = Mock()
+            client.get_paginator.return_value.paginate.return_value = [
+                {'Contents': [{'Key': 'crops/v1/img/a.jpg', 'Size': 4}, {'Key': 'crops/v1/img/b.jpg', 'Size': 3}]}, {}]
+            result = verify_listing(client, 'bucket', db)
+            self.assertEqual((result['listed'], result['inventory'], result['stale']), (2, 4, 3))
+            self.assertEqual([r[0] for r in db.execute('SELECT path FROM uploads')], ['img/a.jpg'])
 
     def test_offline_inventory_then_configured_destination_keeps_checkpoint_guard(self):
         with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {}, clear=True), redirect_stdout(io.StringIO()):

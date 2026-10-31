@@ -2,6 +2,20 @@
 
 Running log. Nothing here is a commitment; newest at the top.
 
+## 2026-10-31 · static viewer on Cloudflare, graffiti retired
+
+- User approved moving the static part to Cloudflare, keeping the API on this server, and
+  retiring graffiti. Static shell + `ctx/` are a Worker with assets on route
+  `typology.m19182.dev/*`; script-less routes keep `/api`, `/proposal-context` and the local
+  crop fallback on the tunnel. Chosen over a proxy Worker + `typology-origin` hostname: no
+  Worker requests at all (map thumbnails alone are hundreds of `/api/thumb` hits per visit),
+  no DNS/tunnel change, rollback = delete one route.
+- R2 crops: listing check found all 1,164,241 crops (33.4 GB) with matching sizes; 50 random
+  public SHA-256 checks matched. Delivery was already activated in the export on 2026-10-22.
+  No new crop uploads were needed. R2 CORS added for the alphabet canvas (`?cors` cache key).
+- Map and wall thumbnails still come from `/api/thumb` on this server (edge-cached by
+  extension). Pre-rendering them to R2 would be ~2.3M writes (~$10).
+
 ## 2026-10-12 · categories before appearance clusters
 
 - The DINOv2/v3 comparison prompted a shift toward browsing recognizable object categories.

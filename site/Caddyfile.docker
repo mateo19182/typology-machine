@@ -7,7 +7,6 @@
 http://:8790 {
 	root * {$TYPOLOGY_SITE_ROOT}
 	encode zstd gzip
-	reverse_proxy /api/graffiti/* host.docker.internal:8797
 	reverse_proxy /api/* object-api:8794
 	reverse_proxy /proposal-context/* proposal-context:8793
 	file_server

@@ -1,5 +1,7 @@
 # Graffiti model experiment
 
+**Retired 2026-10-31.** The page is no longer linked or deployed (`/graffiti.html` redirects to the map), Caddy no longer proxies `/api/graffiti/`, and `typology-graffiti.service` is disabled. Code, run directories, datasets and Hugging Face exports are kept; the notes below describe the experiment as it ran.
+
 `graffiti.html` generates 512px images with distilled FLUX.2 klein 4B and the captioned Coruña LoRA, using four steps and a persistent worker. The adapter was trained on Klein Base 4B. The deployed run is `/mnt/data/projects/typology-machine/graffiti-flux2-captioned-20261014`, with 971 training images, 92 holdout images and 2,000 optimization steps. Prompts are passed through without a city-name prefix. Model weights, selected images and outputs stay outside Git. Set `TYPOLOGY_GRAFFITI_HOME` or pass `--home` to choose a run; `training.json` records the training model and optional `inference.json` selects the deployed distilled profile. The original SD CLI defaults to `/mnt/data/projects/typology-machine/graffiti-ai`.
 
 The first run used 225 training images and 29 held-out images, 300 optimization steps, rank 4, 512px inputs, and seed 19182. Only UNet attention adapters train; the base model stays frozen. The held-out denoising loss changed from 0.154809 to 0.154611. That tiny change does not establish improved visual quality. Fixed-seed base and adapted samples both generated successfully and differed visibly.

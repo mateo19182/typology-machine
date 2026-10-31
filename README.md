@@ -18,7 +18,7 @@ Linked from the site header:
 - **Visual wandering** follows saved visual matches between real street photos, holding the detected object at a fixed screen position during each crossfade. The graph samples up to 15,000 objects, rejects weak and differently proportioned matches, and offers shape or shape-and-colour browsing. Reliable local feature matches refine rotation, scale and position; other pairs use centred object boxes. No model runs while browsing.
 - **Coruña alphabet** composes text from an editable starter of recognized letters on real signs. [Alphabet setup and limitations](docs/alphabet.md).
 - **Living typology book** creates printable A4 contact sheets with category, date, source and neighbourhood filters, editable captions, object links and PDF output through browser print.
-- **Graffiti generator** runs distilled FLUX.2 klein 4B in four steps with a persistent worker and a Coruña LoRA trained on Base 4B for 2,000 steps on 971 individually captioned crops, with 92 held out. Prompts are passed through without a city-name prefix. Compare the model and adapter by changing archive influence. [Training, captioning and serving](docs/graffiti.md).
+- **Graffiti generator** (retired 2026-10-31; no longer linked or served). It ran distilled FLUX.2 klein 4B with a Coruña LoRA on this server's GPU. Code, training data and [notes](docs/graffiti.md) remain.
 
 Private [Hugging Face datasets and model exports](docs/huggingface.md) preserve the
 archive metadata, reviewed graffiti datasets and the completed SD 1.5 and FLUX.2
@@ -63,7 +63,8 @@ caddy run --config site/Caddyfile --adapter caddyfile
 ```
 
 Open `http://127.0.0.1:8790`. See [deployment](docs/deployment.md) for exports,
-full-image support, background services, custom paths, and optional R2 delivery.
+full-image support, background services, custom paths, R2 delivery, and the
+Cloudflare publish step (`explore/deploy_cloudflare.sh`).
 
 ## How it works
 
@@ -72,8 +73,9 @@ full-image support, background services, custom paths, and optional R2 delivery.
   be a symlink to a larger disk.
 - `explore/object_api.py` serves map counts, paginated records, and downloads from
   SQLite. Its index lives outside the image archive.
-- `site/` is a plain HTML/CSS/JavaScript viewer. Caddy serves its exported copy and
-  proxies the API. Crops can be served locally or from R2.
+- `site/` is a plain HTML/CSS/JavaScript viewer. Locally, Caddy serves its exported copy and
+  proxies the API. The public viewer serves it from a Cloudflare Worker, crops from R2,
+  and only the API and full street images from this server.
 
 [Research notes](docs/research-notes.md) describe individual experiments and their
 run IDs. [NOTES.md](NOTES.md), [LOG.md](LOG.md), [IDEAS.md](IDEAS.md), and

@@ -1,0 +1,9 @@
+{
+  // Assets-only Worker for the static shell. explore/deploy_cloudflare.sh builds the directory
+  // and adds script-less routes so /api, /proposal-context and local crop fallbacks reach the tunnel.
+  "name": "typology-machine",
+  "compatibility_date": "2026-10-30",
+  "assets": { "directory": "data/coruna/cloudflare-site" },
+  "routes": [{ "pattern": "typology.m19182.dev/*", "zone_name": "m19182.dev" }],
+  "workers_dev": false
+}

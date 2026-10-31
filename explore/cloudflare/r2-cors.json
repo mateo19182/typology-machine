@@ -1,0 +1,11 @@
+{
+  "rules": [
+    {
+      "allowed": {
+        "origins": ["https://typology.m19182.dev", "http://127.0.0.1:8790", "http://localhost:8790"],
+        "methods": ["GET", "HEAD"]
+      },
+      "maxAgeSeconds": 86400
+    }
+  ]
+}

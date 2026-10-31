@@ -1,3 +1,4 @@
+# Retired 2026-10-31; kept for reference (see docs/graffiti.md).
 [Unit]
 Description=Typology graffiti generation API
 After=network.target
