@@ -1,9 +1,0 @@
-[Unit]
-Description=Check Typology background work every five minutes
-
-[Timer]
-OnBootSec=2min
-OnUnitActiveSec=5min
-
-[Install]
-WantedBy=timers.target

@@ -59,34 +59,23 @@ version in `index.html` whenever the script changes to avoid stale edge caches.
 
 ## Optional systemd services
 
-`explore/services/` contains user-service examples. They assume the checkout is
-at `%h/projects/typology-machine`, where `%h` means the user's home directory.
-If yours is elsewhere, edit `WorkingDirectory` and executable paths in the copied
-units. Review dataset paths and run IDs before enabling a worker. Install only
-the services needed for your deployment.
+Workers and the background monitor can run as user services. The unit files are
+deployment-specific and are not tracked in Git: keep yours in `explore/services/`
+(ignored) or directly in `~/.config/systemd/user/`. Point `WorkingDirectory` and
+executables at your checkout, review dataset paths and run IDs before enabling a
+worker, and install only the services your deployment needs.
 
-For example, after building the query index:
-
-```sh
-mkdir -p ~/.config/systemd/user
-cp explore/services/typology-object-api.service ~/.config/systemd/user/
-# Edit the copied unit if your checkout is in another directory.
-systemctl --user daemon-reload
-systemctl --user enable --now typology-object-api.service
-```
-
-Units optionally read `~/.config/typology-machine/deployment.env`:
+Units can read `~/.config/typology-machine/deployment.env`:
 
 ```ini
 TYPOLOGY_PUBLIC_URL=https://your-viewer.example
 TYPOLOGY_SITE_ROOT=/absolute/path/to/data/coruna/site
-TYPOLOGY_DATA_DISK=/mnt/data
+TYPOLOGY_DATA_DISK=/absolute/path/to/data-disk
 ```
 
 These variables are not automatically loaded from the repository's `.env` by the
 API or Caddy. Export them in the shell for manual runs. Keep deployment-specific
-configuration outside Git. Existing installed units are independent of these
-examples; copying a changed template is an explicit deployment step.
+configuration outside Git.
 
 Layer refresh rebuilds the query index after exporting. OCR, follow-up, and R2
 have separate timers. The optional background monitor checks this deployment's

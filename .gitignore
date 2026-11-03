@@ -7,3 +7,6 @@
 __pycache__/
 *.pyc
 .wrangler/
+
+# Local systemd units (deployment-specific)
+/explore/services/

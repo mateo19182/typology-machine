@@ -16,12 +16,12 @@ services:
     extra_hosts: ["host.docker.internal:host-gateway"]
     volumes:
       - ./site/Caddyfile.docker:/etc/caddy/Caddyfile:ro
-      - /mnt/data/projects/typology-machine/data:/mnt/data/projects/typology-machine/data:ro
-      # Site symlinks still point at the pre-move project path
-      - /mnt/data/projects/typology-machine/data:/home/mateo/projects/typology-machine/data:ro
-      - /mnt/data/projects/typology-machine/data:/home/mateo/projects/geo/typology-machine/data:ro
-      # Live crops/site/cache on NVMe since 2026-11-03 (HDD failing); old paths are symlinks to here
-      - /home/mateo/nvme-data/typology:/home/mateo/nvme-data/typology:ro
+      - ${TYPOLOGY_DATA_DIR}:${TYPOLOGY_DATA_DIR}:ro
+      # Site symlinks use absolute paths from an earlier checkout location
+      - ${TYPOLOGY_DATA_DIR}:${TYPOLOGY_LEGACY_DATA_DIR}:ro
+      - ${TYPOLOGY_DATA_DIR}:${TYPOLOGY_CHECKOUT_DATA_DIR}:ro
+      # Live crops, site and context cache (fast disk); data-dir paths symlink here
+      - ${TYPOLOGY_LIVE_DIR}:${TYPOLOGY_LIVE_DIR}:ro
     depends_on: [object-api, proposal-context]
     restart: unless-stopped
 
@@ -31,11 +31,11 @@ services:
     command: python -u explore/object_api.py serve --host 0.0.0.0 --state /state/query
     env_file: ${HOME}/.config/typology-machine/deployment.env
     volumes:
-      - /mnt/data/projects/typology-machine/data:/mnt/data/projects/typology-machine/data:ro
-      # Site symlinks still point at the pre-move project path
-      - /mnt/data/projects/typology-machine/data:/home/mateo/projects/typology-machine/data:ro
+      - ${TYPOLOGY_DATA_DIR}:${TYPOLOGY_DATA_DIR}:ro
+      # Site symlinks use absolute paths from an earlier checkout location
+      - ${TYPOLOGY_DATA_DIR}:${TYPOLOGY_LEGACY_DATA_DIR}:ro
       - ${HOME}/.local/state/typology-machine/query:/state/query:ro
-      - /home/mateo/nvme-data/typology:/home/mateo/nvme-data/typology:ro
+      - ${TYPOLOGY_LIVE_DIR}:${TYPOLOGY_LIVE_DIR}:ro
       - ${HOME}/.local/state/typology-machine/thumbs:/state/thumbs
     restart: unless-stopped
 
@@ -48,11 +48,11 @@ services:
       OMP_NUM_THREADS: 1
     cpu_shares: 512
     volumes:
-      - /mnt/data/projects/typology-machine/data:/mnt/data/projects/typology-machine/data:ro
-      # Site symlinks still point at the pre-move project path
-      - /mnt/data/projects/typology-machine/data:/home/mateo/projects/typology-machine/data:ro
-      - /home/mateo/nvme-data/typology:/home/mateo/nvme-data/typology:ro
-      - /home/mateo/nvme-data/typology/coruna/proposal_context_cache:/home/mateo/nvme-data/typology/coruna/proposal_context_cache
+      - ${TYPOLOGY_DATA_DIR}:${TYPOLOGY_DATA_DIR}:ro
+      # Site symlinks use absolute paths from an earlier checkout location
+      - ${TYPOLOGY_DATA_DIR}:${TYPOLOGY_LEGACY_DATA_DIR}:ro
+      - ${TYPOLOGY_LIVE_DIR}:${TYPOLOGY_LIVE_DIR}:ro
+      - ${TYPOLOGY_LIVE_DIR}/coruna/proposal_context_cache:${TYPOLOGY_LIVE_DIR}/coruna/proposal_context_cache
     depends_on: [object-api]
     restart: unless-stopped
 
