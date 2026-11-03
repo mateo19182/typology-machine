@@ -17,7 +17,11 @@ services:
     volumes:
       - ./site/Caddyfile.docker:/etc/caddy/Caddyfile:ro
       - /mnt/data/projects/typology-machine/data:/mnt/data/projects/typology-machine/data:ro
+      # Site symlinks still point at the pre-move project path
       - /mnt/data/projects/typology-machine/data:/home/mateo/projects/typology-machine/data:ro
+      - /mnt/data/projects/typology-machine/data:/home/mateo/projects/geo/typology-machine/data:ro
+      # Live crops/site/cache on NVMe since 2026-11-03 (HDD failing); old paths are symlinks to here
+      - /home/mateo/nvme-data/typology:/home/mateo/nvme-data/typology:ro
     depends_on: [object-api, proposal-context]
     restart: unless-stopped
 
@@ -28,7 +32,10 @@ services:
     env_file: ${HOME}/.config/typology-machine/deployment.env
     volumes:
       - /mnt/data/projects/typology-machine/data:/mnt/data/projects/typology-machine/data:ro
+      # Site symlinks still point at the pre-move project path
+      - /mnt/data/projects/typology-machine/data:/home/mateo/projects/typology-machine/data:ro
       - ${HOME}/.local/state/typology-machine/query:/state/query:ro
+      - /home/mateo/nvme-data/typology:/home/mateo/nvme-data/typology:ro
       - ${HOME}/.local/state/typology-machine/thumbs:/state/thumbs
     restart: unless-stopped
 
@@ -42,7 +49,10 @@ services:
     cpu_shares: 512
     volumes:
       - /mnt/data/projects/typology-machine/data:/mnt/data/projects/typology-machine/data:ro
-      - /mnt/data/projects/typology-machine/data/coruna/proposal_context_cache:/mnt/data/projects/typology-machine/data/coruna/proposal_context_cache
+      # Site symlinks still point at the pre-move project path
+      - /mnt/data/projects/typology-machine/data:/home/mateo/projects/typology-machine/data:ro
+      - /home/mateo/nvme-data/typology:/home/mateo/nvme-data/typology:ro
+      - /home/mateo/nvme-data/typology/coruna/proposal_context_cache:/home/mateo/nvme-data/typology/coruna/proposal_context_cache
     depends_on: [object-api]
     restart: unless-stopped
 
