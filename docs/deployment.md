@@ -155,7 +155,7 @@ explore/deploy_cloudflare.sh              # or --build-only to stop before any C
 
 It copies changed frontend files into the export, uploads new crops when the layer
 manifest or `data.json` changed, rebuilds `data/coruna/cloudflare-site` (hard-linking
-`ctx/`), ensures the script-less routes and R2 CORS, runs `wrangler deploy`, and smoke
+`ctx/`, adding `robots.txt` and `sitemap.xml` from `explore/cloudflare/`), ensures the script-less routes and R2 CORS, runs `wrangler deploy`, and smoke
 tests `/` and `/api/meta`. Logs: `~/.local/state/typology-machine/cloudflare/`. The
 Cloudflare token is read from `~/.secrets/cloudflare-pages.env`. Nothing runs it on a
 timer; layer refresh timers are currently not installed, so run it by hand after an
