@@ -40,7 +40,7 @@ rsync -a --delete --delete-excluded --exclude='/graffiti*' --exclude='*.before-*
   --exclude='*' "$SITE/" "$OUT/"
 # Legacy context photos are frozen; hard links avoid a second 2.6 GB copy.
 rsync -a --delete --link-dest="$(realpath "$SITE/ctx")" "$SITE/ctx/" "$OUT/ctx/"
-cp explore/cloudflare/_headers explore/cloudflare/_redirects "$OUT/"
+cp explore/cloudflare/{_headers,_redirects,robots.txt,sitemap.xml} "$OUT/"
 files=$(find "$OUT" -type f | wc -l)
 large=$(find "$OUT" -type f -size +25M | wc -l)
 echo "$files files, $(du -sh --apparent-size "$OUT" | cut -f1)"
